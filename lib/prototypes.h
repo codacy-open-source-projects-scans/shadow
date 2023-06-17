@@ -308,9 +308,7 @@ extern int do_pam_passwd_non_interactive (const char *pam_service,
 #endif				/* USE_PAM */
 
 /* obscure.c */
-#ifndef USE_PAM
 extern bool obscure (const char *, const char *, const struct passwd *);
-#endif
 
 /* pam_pass.c */
 #ifdef USE_PAM
@@ -326,6 +324,10 @@ extern struct group *prefix_getgrnam(const char *name);
 extern struct group *prefix_getgrgid(gid_t gid);
 extern struct passwd *prefix_getpwuid(uid_t uid);
 extern struct passwd *prefix_getpwnam(const char* name);
+#if HAVE_FGETPWENT_R
+extern int prefix_getpwnam_r(const char* name, struct passwd* pwd,
+                             char* buf, size_t buflen, struct passwd** result);
+#endif
 extern struct spwd *prefix_getspnam(const char* name);
 extern struct group *prefix_getgr_nam_gid(const char *grname);
 extern void prefix_setpwent(void);
@@ -336,9 +338,7 @@ extern struct group* prefix_getgrent(void);
 extern void prefix_endgrent(void);
 
 /* pwd2spwd.c */
-#ifndef USE_PAM
 extern struct spwd *pwd_to_spwd (const struct passwd *);
-#endif
 
 /* pwdcheck.c */
 #ifndef USE_PAM
@@ -481,6 +481,8 @@ extern bool valid (const char *, const struct passwd *);
 
 /* xgetpwnam.c */
 extern /*@null@*/ /*@only@*/struct passwd *xgetpwnam (const char *);
+/* xprefix_getpwnam.c */
+extern /*@null@*/ /*@only@*/struct passwd *xprefix_getpwnam (const char *);
 /* xgetpwuid.c */
 extern /*@null@*/ /*@only@*/struct passwd *xgetpwuid (uid_t);
 /* xgetgrnam.c */

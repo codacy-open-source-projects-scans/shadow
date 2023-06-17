@@ -9,8 +9,6 @@
 
 #include <config.h>
 
-#ifndef USE_PAM
-
 #ident "$Id$"
 
 
@@ -109,7 +107,7 @@ static /*@observer@*//*@null@*/const char *password_check (
 
 	newmono = str_lower (xstrdup (new));
 	oldmono = str_lower (xstrdup (old));
-	wrapped = XMALLOCARRAY (strlen (oldmono) * 2 + 1, char);
+	wrapped = XMALLOC(strlen(oldmono) * 2 + 1, char);
 	strcpy (wrapped, oldmono);
 	strcat (wrapped, oldmono);
 
@@ -247,7 +245,3 @@ bool obscure (const char *old, const char *new, const struct passwd *pwdp)
 	}
 	return true;
 }
-
-#else				/* !USE_PAM */
-extern int ISO_C_forbids_an_empty_translation_unit;
-#endif				/* !USE_PAM */

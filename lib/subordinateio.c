@@ -34,7 +34,7 @@ static /*@null@*/ /*@only@*/void *subordinate_dup (const void *ent)
 	const struct subordinate_range *rangeent = ent;
 	struct subordinate_range *range;
 
-	range = MALLOC (struct subordinate_range);
+	range = MALLOC(1, struct subordinate_range);
 	if (NULL == range) {
 		return NULL;
 	}
@@ -315,19 +315,16 @@ static bool have_range(struct commonio_db *db,
 
 static bool append_range(struct subid_range **ranges, const struct subordinate_range *new, int n)
 {
-	if (!*ranges) {
-		*ranges = MALLOC(struct subid_range);
-		if (!*ranges)
-			return false;
-	} else {
-		struct subid_range *alloced;
-		alloced = REALLOCARRAY(*ranges, n + 1, struct subid_range);
-		if (!alloced)
-			return false;
-		*ranges = alloced;
-	}
-	(*ranges)[n].start = new->start;
-	(*ranges)[n].count = new->count;
+	struct subid_range  *sr;
+
+	sr = REALLOC(*ranges, n + 1, struct subid_range);
+	if (!sr)
+		return false;
+
+	sr[n].start = new->start;
+	sr[n].count = new->count;
+	*ranges = sr;
+
 	return true;
 }
 
@@ -935,7 +932,7 @@ static int append_uids(uid_t **uids, const char *owner, int n)
 			return n;
 	}
 
-	ret = REALLOCARRAY(*uids, n + 1, uid_t);
+	ret = REALLOC(*uids, n + 1, uid_t);
 	if (!ret) {
 		free(*uids);
 		return -1;
