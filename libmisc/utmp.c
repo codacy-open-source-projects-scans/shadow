@@ -11,6 +11,7 @@
 
 #include "defines.h"
 #include "prototypes.h"
+#include "getdef.h"
 
 #include <utmp.h>
 #include <assert.h>
@@ -19,6 +20,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <stdio.h>
+#include <fcntl.h>
 
 #include "alloc.h"
 
@@ -54,6 +56,57 @@ static bool is_my_tty (const char tty[UT_LINESIZE])
 }
 
 /*
+ * failtmp - update the cumulative failure log
+ *
+ *	failtmp updates the (struct utmp) formatted failure log which
+ *	maintains a record of all login failures.
+ */
+static void failtmp (const char *username, const struct utmp *failent)
+{
+	const char *ftmp;
+	int fd;
+
+	/*
+	 * Get the name of the failure file.  If no file has been defined
+	 * in login.defs, don't do this.
+	 */
+
+	ftmp = getdef_str ("FTMP_FILE");
+	if (NULL == ftmp) {
+		return;
+	}
+
+	/*
+	 * Open the file for append.  It must already exist for this
+	 * feature to be used.
+	 */
+
+	if (access (ftmp, F_OK) != 0) {
+		return;
+	}
+
+	fd = open (ftmp, O_WRONLY | O_APPEND);
+	if (-1 == fd) {
+		SYSLOG ((LOG_WARN,
+		         "Can't append failure of user %s to %s.",
+		         username, ftmp));
+		return;
+	}
+
+	/*
+	 * Append the new failure record and close the log file.
+	 */
+
+	if (   (write_full (fd, failent, sizeof *failent) != (ssize_t) sizeof *failent)
+	    || (close (fd) != 0)) {
+		SYSLOG ((LOG_WARN,
+		         "Can't append failure of user %s to %s.",
+		         username, ftmp));
+		(void) close (fd);
+	}
+}
+
+/*
  * get_current_utmp - return the most probable utmp entry for the current
  *                    session
  *
@@ -67,6 +120,7 @@ static bool is_my_tty (const char tty[UT_LINESIZE])
  *
  *	Return NULL if no entries exist in utmp for the current process.
  */
+static
 /*@null@*/ /*@only@*/struct utmp *get_current_utmp (void)
 {
 	struct utmp *ut;
@@ -101,6 +155,32 @@ static bool is_my_tty (const char tty[UT_LINESIZE])
 	return ret;
 }
 
+int get_session_host (char **out)
+{
+	char *hostname = NULL;
+	struct utmp *ut = NULL;
+	int ret = 0;
+
+	ut = get_current_utmp();
+
+#ifdef HAVE_STRUCT_UTMP_UT_HOST
+	if ((ut != NULL) && (ut->ut_host[0] != '\0')) {
+		hostname = XMALLOC(sizeof(ut->ut_host) + 1, char);
+		strncpy (hostname, ut->ut_host, sizeof (ut->ut_host));
+		hostname[sizeof (ut->ut_host)] = '\0';
+		*out = hostname;
+		free (ut);
+	} else {
+		*out = NULL;
+		ret = -2;
+	}
+#else
+	*out = NULL;
+	ret = -2;
+#endif /* HAVE_STRUCT_UTMP_UT_HOST */
+
+	return ret;
+}
 
 #ifndef USE_PAM
 /*
@@ -114,7 +194,7 @@ static void updwtmp (const char *filename, const struct utmp *ut)
 
 	fd = open (filename, O_APPEND | O_WRONLY, 0);
 	if (fd >= 0) {
-		write (fd, ut, sizeof (*ut));
+		write_full (fd, ut, sizeof (*ut));
 		close (fd);
 	}
 }
@@ -141,6 +221,7 @@ static void updwtmp (const char *filename, const struct utmp *ut)
  *
  *	The returned structure shall be freed by the caller.
  */
+static
 /*@only@*/struct utmp *prepare_utmp (const char *name,
                                      const char *line,
                                      const char *host,
@@ -260,7 +341,7 @@ static void updwtmp (const char *filename, const struct utmp *ut)
  *
  *	Return 1 on failure and 0 on success.
  */
-int setutmp (struct utmp *ut)
+static int setutmp (struct utmp *ut)
 {
 	int err = 0;
 
@@ -278,4 +359,66 @@ int setutmp (struct utmp *ut)
 #endif				/* ! USE_PAM */
 
 	return err;
+}
+
+int update_utmp (const char *user,
+                 const char *tty,
+                 const char *host)
+{
+	struct utmp *utent, *ut;
+
+	utent = get_current_utmp ();
+	if (utent == NULL) {
+		return -1;
+	}
+
+	ut = prepare_utmp  (user, tty, host, utent);
+
+	(void) setutmp  (ut);	/* make entry in the utmp & wtmp files */
+	free (utent);
+	free (ut);
+
+	return 1;
+}
+
+void record_failure(const char *failent_user,
+                    const char *tty,
+                    const char *hostname)
+{
+	struct utmp *utent, *failent;
+
+	if (getdef_str ("FTMP_FILE") != NULL) {
+		utent = get_current_utmp ();
+		failent = prepare_utmp (failent_user, tty, hostname, utent);
+		failtmp (failent_user, failent);
+		free (utent);
+		free (failent);
+	}
+}
+
+unsigned long active_sessions_count(const char *name, unsigned long limit)
+{
+	struct utmp *ut;
+	unsigned long count = 0;
+
+	setutent ();
+	while ((ut = getutent ()))
+	{
+		if (USER_PROCESS != ut->ut_type) {
+			continue;
+		}
+		if ('\0' == ut->ut_user[0]) {
+			continue;
+		}
+		if (strncmp (name, ut->ut_user, sizeof (ut->ut_user)) != 0) {
+			continue;
+		}
+		count++;
+		if (count > limit) {
+			break;
+		}
+	}
+	endutent ();
+
+	return count;
 }

@@ -109,10 +109,6 @@ static void usage (void);
 static void setup_tty (void);
 static void process_flags (int argc, char *const *argv);
 static /*@observer@*/const char *get_failent_user (/*@returned@*/const char *user);
-static void update_utmp (const char *user,
-                         const char *tty,
-                         const char *host,
-                         /*@null@*/const struct utmp *utent);
 
 #ifndef USE_PAM
 static struct faillog faillog;
@@ -404,7 +400,7 @@ static void exit_handler (unused int sig)
 
 static void alarm_handler (unused int sig)
 {
-	write (STDERR_FILENO, tmsg, strlen (tmsg));
+	write_full (STDERR_FILENO, tmsg, strlen (tmsg));
 	signal(SIGALRM, exit_handler);
 	alarm(2);
 }
@@ -459,24 +455,6 @@ static /*@observer@*/const char *get_failent_user (/*@returned@*/const char *use
 }
 
 /*
- * update_utmp - Update or create an utmp entry in utmp, wtmp, utmpw, and
- *               wtmpx
- *
- *	utent should be the utmp entry returned by get_current_utmp (or
- *	NULL).
- */
-static void update_utmp (const char *user,
-                         const char *tty,
-                         const char *host,
-                         /*@null@*/const struct utmp *utent)
-{
-	struct utmp  *ut  = prepare_utmp  (user, tty, host, utent);
-
-	(void) setutmp  (ut);	/* make entry in the utmp & wtmp files */
-	free (ut);
-}
-
-/*
  * login - create a new login session for a user
  *
  *	login is typically called by getty as the second step of a
@@ -520,7 +498,7 @@ int main (int argc, char **argv)
 	struct passwd *pwd = NULL;
 	char **envp = environ;
 	const char *failent_user;
-	/*@null@*/struct utmp *utent;
+	char *host = NULL;
 
 #ifdef USE_PAM
 	int retcode;
@@ -557,19 +535,17 @@ int main (int argc, char **argv)
 		exit (1);	/* must be a terminal */
 	}
 
-	utent = get_current_utmp ();
+	err = get_session_host(&host);
 	/*
 	 * Be picky if run by normal users (possible if installed setuid
-	 * root), but not if run by root. This way it still allows logins
-	 * even if your getty is broken, or if something corrupts utmp,
-	 * but users must "exec login" which will use the existing utmp
-	 * entry (will not overwrite remote hostname).  --marekm
+	 * root), but not if run by root.
 	 */
-	if (!amroot && (NULL == utent)) {
-		(void) puts (_("No utmp entry.  You must exec \"login\" from the lowest level \"sh\""));
+	if (!amroot && (err != 0)) {
+		SYSLOG ((LOG_ERR,
+				 "No session entry, error %d.  You must exec \"login\" from the lowest level \"sh\"",
+				 err));
 		exit (1);
 	}
-	/* NOTE: utent might be NULL afterwards */
 
 	tmptty = ttyname (0);
 	if (NULL == tmptty) {
@@ -596,10 +572,11 @@ int main (int argc, char **argv)
 	}
 #ifdef RLOGIN
 	if (rflg) {
+		size_t max_size = sysconf(_SC_LOGIN_NAME_MAX);
 		assert (NULL == username);
-		username = XMALLOC(USER_NAME_MAX_LENGTH + 1, char);
-		username[USER_NAME_MAX_LENGTH] = '\0';
-		if (do_rlogin (hostname, username, USER_NAME_MAX_LENGTH, term, sizeof term)) {
+		username = XMALLOC(max_size + 1, char);
+		username[max_size] = '\0';
+		if (do_rlogin (hostname, username, max_size, term, sizeof term)) {
 			preauth_flag = true;
 		} else {
 			free (username);
@@ -664,10 +641,8 @@ int main (int argc, char **argv)
 
 	if (rflg || hflg) {
 		cp = hostname;
-#if defined(HAVE_STRUCT_UTMP_UT_HOST)
-	} else if ((NULL != utent) && ('\0' != utent->ut_host[0])) {
-		cp = utent->ut_host;
-#endif				/* HAVE_STRUCT_UTMP_UT_HOST */
+	} else if ((host != NULL) && (host[0] != '\0')) {
+		cp = host;
 	} else {
 		cp = "";
 	}
@@ -679,6 +654,7 @@ int main (int argc, char **argv)
 		snprintf (fromhost, sizeof fromhost,
 		          " on '%.100s'", tty);
 	}
+	free(host);
 
       top:
 	/* only allow ALARM sec. for login */
@@ -909,14 +885,15 @@ int main (int argc, char **argv)
 
 		failed = false;	/* haven't failed authentication yet */
 		if (NULL == username) {	/* need to get a login id */
+			size_t max_size = sysconf(_SC_LOGIN_NAME_MAX);
 			if (subroot) {
 				closelog ();
 				exit (1);
 			}
 			preauth_flag = false;
-			username = XMALLOC(USER_NAME_MAX_LENGTH + 1, char);
-			username[USER_NAME_MAX_LENGTH] = '\0';
-			login_prompt (username, USER_NAME_MAX_LENGTH);
+			username = XMALLOC(max_size + 1, char);
+			username[max_size] = '\0';
+			login_prompt (username, max_size);
 
 			if ('\0' == username[0]) {
 				/* Prompt for a new login */
@@ -1026,15 +1003,9 @@ int main (int argc, char **argv)
 		if ((NULL != pwd) && getdef_bool ("FAILLOG_ENAB")) {
 			failure (pwd->pw_uid, tty, &faillog);
 		}
-		if (getdef_str ("FTMP_FILE") != NULL) {
-			struct utmp *failent =
-				prepare_utmp (failent_user,
-				              tty,
-				              hostname,
-				              utent);
-			failtmp (failent_user, failent);
-			free (failent);
-		}
+#ifndef ENABLE_LOGIND
+		record_failure(failent_user, tty, hostname);
+#endif /* ENABLE_LOGIND */
 
 		retries--;
 		if (retries <= 0) {
@@ -1205,11 +1176,16 @@ int main (int argc, char **argv)
 		}
 	}
 
+#ifndef ENABLE_LOGIND
 	/*
 	 * The utmp entry needs to be updated to indicate the new status
 	 * of the session, the new PID and SID.
 	 */
-	update_utmp (username, tty, hostname, utent);
+	err = update_utmp (username, tty, hostname);
+	if (err != 0) {
+		SYSLOG ((LOG_WARN, "Unable to update utmp entry for %s", username));
+	}
+#endif /* ENABLE_LOGIND */
 
 	/* The pwd and spwd entries for the user have been copied.
 	 *
