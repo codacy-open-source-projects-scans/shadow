@@ -205,13 +205,13 @@ static bool home_added = false;
 #define DLOG_INIT	"LOG_INIT="
 
 /* local function prototypes */
-static void fail_exit (int);
+NORETURN static void fail_exit (int);
 static void get_defaults (void);
 static void show_defaults (void);
 static int set_defaults (void);
 static int get_groups (char *);
 static struct group * get_local_group (char * grp_name);
-static void usage (int status);
+NORETURN static void usage (int status);
 static void new_pwent (struct passwd *);
 
 static long scale_age (long);
@@ -2067,7 +2067,7 @@ static void faillog_reset (uid_t uid)
 		return;
 	}
 	if (   (lseek (fd, offset_uid, SEEK_SET) != offset_uid)
-	    || (write_full (fd, &fl, sizeof (fl)) != (ssize_t) sizeof (fl))
+	    || (write_full(fd, &fl, sizeof (fl)) == -1)
 	    || (fsync (fd) != 0)) {
 		fprintf (stderr,
 		         _("%s: failed to reset the faillog entry of UID %lu: %s\n"),

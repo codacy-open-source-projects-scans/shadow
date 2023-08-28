@@ -222,7 +222,8 @@ static const struct subordinate_range *find_range(struct commonio_db *db,
          */
         struct passwd *pwd;
         uid_t          owner_uid;
-        char           owner_uid_string[33] = "";
+        char           owner_uid_string[33];
+        int ret;
 
 
         /* Get UID of the username we are looking for */
@@ -232,7 +233,9 @@ static const struct subordinate_range *find_range(struct commonio_db *db,
                 return NULL;
         }
         owner_uid = pwd->pw_uid;
-        sprintf(owner_uid_string, "%lu", (unsigned long int)owner_uid);
+        ret = snprintf(owner_uid_string, sizeof (owner_uid_string), "%lu", (unsigned long int)owner_uid);
+        if (ret < 0 || (size_t)ret >= sizeof (owner_uid_string))
+                return NULL;
 
         commonio_rewind(db);
         while ((range = commonio_next(db)) != NULL) {
@@ -352,14 +355,17 @@ void free_subordinate_ranges(struct subordinate_range **ranges, int count)
  */
 static int subordinate_range_cmp (const void *p1, const void *p2)
 {
-	struct subordinate_range *range1, *range2;
+	const struct commonio_entry *const *ce1;
+	const struct commonio_entry *const *ce2;
+	const struct subordinate_range *range1, *range2;
 
-
-	range1 = (*(struct commonio_entry **) p1)->eptr;
+	ce1 = p1;
+	range1 = (*ce1)->eptr;
 	if (range1 == NULL)
 		return 1;
 
-	range2 = (*(struct commonio_entry **) p2)->eptr;
+	ce2 = p2;
+	range2 = (*ce2)->eptr;
 	if (range2 == NULL)
 		return -1;
 
