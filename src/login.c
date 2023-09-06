@@ -30,11 +30,13 @@
 #include "faillog.h"
 #include "failure.h"
 #include "getdef.h"
+#include "memzero.h"
 #include "prototypes.h"
 #include "pwauth.h"
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
+#include "strlcpy.h"
 
 #ifdef USE_PAM
 #include "pam_defs.h"
@@ -551,7 +553,7 @@ int main (int argc, char **argv)
 	if (NULL == tmptty) {
 		tmptty = "UNKNOWN";
 	}
-	STRFCPY (tty, tmptty);
+	STRLCPY(tty, tmptty);
 
 #ifndef USE_PAM
 	is_console = console (tty);
@@ -709,8 +711,7 @@ int main (int argc, char **argv)
 			          sizeof (loginprompt),
 			          _("%s login: "), hostn);
 		} else {
-			strlcpy (loginprompt, _("login: "),
-			         sizeof (loginprompt));
+			STRLCPY(loginprompt, _("login: "));
 		}
 
 		retcode = pam_set_item (pamh, PAM_USER_PROMPT, loginprompt);

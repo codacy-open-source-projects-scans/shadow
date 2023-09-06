@@ -20,9 +20,11 @@
 #include <stdio.h>
 #include <sys/types.h>
 
+#include "agetpass.h"
 #include "alloc.h"
 #include "defines.h"
 #include "groupio.h"
+#include "memzero.h"
 #include "nscd.h"
 #include "sssd.h"
 #include "prototypes.h"
@@ -31,8 +33,9 @@
 #endif
 /*@-exitarg@*/
 #include "exitcodes.h"
-
 #include "shadowlog.h"
+#include "strlcpy.h"
+
 /*
  * Global variables
  */
@@ -894,11 +897,11 @@ static void change_passwd (struct group *gr)
 			exit (1);
 		}
 
-		STRFCPY (pass, cp);
+		STRLCPY(pass, cp);
 		erase_pass (cp);
 		cp = agetpass (_("Re-enter new password: "));
 		if (NULL == cp) {
-			memzero (pass, sizeof pass);
+			MEMZERO(pass);
 			exit (1);
 		}
 
@@ -908,7 +911,7 @@ static void change_passwd (struct group *gr)
 		}
 
 		erase_pass (cp);
-		memzero (pass, sizeof pass);
+		MEMZERO(pass);
 
 		if (retries + 1 < RETRIES) {
 			puts (_("They don't match; try again"));
@@ -928,7 +931,7 @@ static void change_passwd (struct group *gr)
 		         Prog, salt, strerror (errno));
 		exit (1);
 	}
-	memzero (pass, sizeof pass);
+	MEMZERO(pass);
 #ifdef SHADOWGRP
 	if (is_shadowgrp) {
 		gr->gr_passwd = SHADOW_PASSWD_STRING;

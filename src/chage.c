@@ -29,9 +29,11 @@
 #include "alloc.h"
 #include "prototypes.h"
 #include "defines.h"
+#include "memzero.h"
 #include "pwio.h"
 #include "shadowio.h"
 #include "shadowlog.h"
+#include "strlcpy.h"
 #ifdef WITH_TCB
 #include "tcbfuncs.h"
 #endif
@@ -821,7 +823,7 @@ int main (int argc, char **argv)
 		fail_exit (E_NOPERM);
 	}
 
-	STRFCPY (user_name, pw->pw_name);
+	STRLCPY(user_name, pw->pw_name);
 #ifdef WITH_TCB
 	if (shadowtcb_set_user (pw->pw_name) == SHADOWTCB_FAILURE) {
 		fail_exit (E_NOPERM);

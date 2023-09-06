@@ -20,9 +20,11 @@
 #include <sys/types.h>
 #include <time.h>
 
+#include "agetpass.h"
 #include "alloc.h"
 #include "defines.h"
 #include "getdef.h"
+#include "memzero.h"
 #include "nscd.h"
 #include "sssd.h"
 #include "prototypes.h"
@@ -30,6 +32,7 @@
 #include "pwio.h"
 #include "shadowio.h"
 #include "shadowlog.h"
+#include "strlcpy.h"
 
 /*
  * exit status values
@@ -238,7 +241,7 @@ static int new_password (const struct passwd *pw)
 			                pw->pw_name);
 			return -1;
 		}
-		STRFCPY (orig, clear);
+		STRLCPY(orig, clear);
 		erase_pass (clear);
 		strzero (cipher);
 	} else {
@@ -293,14 +296,14 @@ static int new_password (const struct passwd *pw)
 	for (i = getdef_num ("PASS_CHANGE_TRIES", 5); i > 0; i--) {
 		cp = agetpass (_("New password: "));
 		if (NULL == cp) {
-			memzero (orig, sizeof orig);
-			memzero (pass, sizeof pass);
+			MEMZERO(orig);
+			MEMZERO(pass);
 			return -1;
 		}
 		if (warned && (strcmp (pass, cp) != 0)) {
 			warned = false;
 		}
-		STRFCPY (pass, cp);
+		STRLCPY(pass, cp);
 		erase_pass (cp);
 
 		if (!amroot && (!obscure (orig, pass, pw) || reuse (pass, pw))) {
@@ -321,8 +324,8 @@ static int new_password (const struct passwd *pw)
 		}
 		cp = agetpass (_("Re-enter new password: "));
 		if (NULL == cp) {
-			memzero (orig, sizeof orig);
-			memzero (pass, sizeof pass);
+			MEMZERO(orig);
+			MEMZERO(pass);
 			return -1;
 		}
 		if (strcmp (cp, pass) != 0) {
@@ -333,10 +336,10 @@ static int new_password (const struct passwd *pw)
 			break;
 		}
 	}
-	memzero (orig, sizeof orig);
+	MEMZERO(orig);
 
 	if (i == 0) {
-		memzero (pass, sizeof pass);
+		MEMZERO(pass);
 		return -1;
 	}
 
@@ -345,7 +348,7 @@ static int new_password (const struct passwd *pw)
 	 */
 	salt = crypt_make_salt (NULL, NULL);
 	cp = pw_encrypt (pass, salt);
-	memzero (pass, sizeof pass);
+	MEMZERO(pass);
 
 	if (NULL == cp) {
 		fprintf (stderr,
@@ -357,7 +360,7 @@ static int new_password (const struct passwd *pw)
 #ifdef HAVE_LIBCRACK_HIST
 	HistUpdate (pw->pw_name, crypt_passwd);
 #endif				/* HAVE_LIBCRACK_HIST */
-	STRFCPY (crypt_passwd, cp);
+	STRLCPY(crypt_passwd, cp);
 	return 0;
 }
 
@@ -1028,7 +1031,7 @@ int main (int argc, char **argv)
 		 * If there are no other flags, just change the password.
 		 */
 		if (!anyflag) {
-			STRFCPY (crypt_passwd, cp);
+			STRLCPY(crypt_passwd, cp);
 
 			/*
 			 * See if the user is permitted to change the password.

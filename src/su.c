@@ -57,6 +57,7 @@
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
+#include "strlcpy.h"
 
 /*
  * Global variables
@@ -97,8 +98,8 @@ static pid_t pid_child = 0;
  * External identifiers
  */
 
-extern char **newenvp; /* libmisc/env.c */
-extern size_t newenvc; /* libmisc/env.c */
+extern char **newenvp; /* lib/env.c */
+extern size_t newenvc; /* lib/env.c */
 
 /* local function prototypes */
 
@@ -675,7 +676,7 @@ static /*@only@*/struct passwd * do_check_perms (void)
 		SYSLOG ((LOG_INFO,
 		         "Change user from '%s' to '%s' as requested by PAM",
 		         name, tmp_name));
-		if (strlcpy (name, tmp_name, sizeof(name)) >= sizeof(name)) {
+		if (STRLCPY(name, tmp_name) == -1) {
 			fprintf (stderr, _("Overlong user name '%s'\n"),
 			         tmp_name);
 			SYSLOG ((LOG_NOTICE, "Overlong user name '%s'",
@@ -777,7 +778,7 @@ static void save_caller_context (char **argv)
 		         (unsigned long) caller_uid));
 		su_failure (caller_tty, true); /* unknown target UID*/
 	}
-	STRFCPY (caller_name, pw->pw_name);
+	STRLCPY(caller_name, pw->pw_name);
 
 #ifndef USE_PAM
 #ifdef SU_ACCESS
@@ -852,7 +853,7 @@ static void process_flags (int argc, char **argv)
 	}
 
 	if (optind < argc) {
-		STRFCPY (name, argv[optind++]);	/* use this login id */
+		STRLCPY(name, argv[optind++]);	/* use this login id */
 	}
 	if ('\0' == name[0]) {		/* use default user */
 		struct passwd *root_pw = getpwnam ("root");

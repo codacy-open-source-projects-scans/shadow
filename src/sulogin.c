@@ -16,13 +16,17 @@
 #include <signal.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
+
+#include "agetpass.h"
 #include "defines.h"
 #include "getdef.h"
+#include "memzero.h"
 #include "prototypes.h"
 #include "pwauth.h"
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
+#include "strlcpy.h"
 
 /*
  * Global variables
@@ -156,7 +160,7 @@ static void catch_signals (unused int sig)
 #endif
 			exit (0);
 		}
-		STRFCPY (pass, cp);
+		STRLCPY(pass, cp);
 		erase_pass (cp);
 
 		if (valid (pass, &pwent)) {	/* check encrypted passwords ... */
@@ -166,7 +170,7 @@ static void catch_signals (unused int sig)
 		sleep (2);
 		(void) puts (_("Login incorrect"));
 	}
-	memzero (pass, sizeof pass);
+	MEMZERO(pass);
 	(void) alarm (0);
 	(void) signal (SIGALRM, SIG_DFL);
 	environ = newenvp;	/* make new environment active */

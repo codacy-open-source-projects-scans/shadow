@@ -23,6 +23,9 @@
 #include <fcntl.h>
 
 #include "alloc.h"
+#include "sizeof.h"
+#include "strlcpy.h"
+#include "zustr2stp.h"
 
 #ident "$Id$"
 
@@ -44,7 +47,7 @@ static bool is_my_tty (const char tty[UT_LINESIZE])
 	if ('\0' == tmptty[0]) {
 		const char *tname = ttyname (STDIN_FILENO);
 		if (NULL != tname)
-			(void) strlcpy (tmptty, tname, sizeof(tmptty));
+			STRLCPY(tmptty, tname);
 	}
 
 	if ('\0' == tmptty[0]) {
@@ -243,9 +246,8 @@ static
 #ifdef HAVE_STRUCT_UTMP_UT_HOST
 	} else if (   (NULL != ut)
 	           && ('\0' != ut->ut_host[0])) {
-		hostname = XMALLOC(sizeof(ut->ut_host) + 1, char);
-		strncpy (hostname, ut->ut_host, sizeof (ut->ut_host));
-		hostname[sizeof (ut->ut_host)] = '\0';
+		hostname = XMALLOC(SIZEOF_ARRAY(ut->ut_host) + 1, char);
+		ZUSTR2STP(hostname, ut->ut_host);
 #endif				/* HAVE_STRUCT_UTMP_UT_HOST */
 	}
 

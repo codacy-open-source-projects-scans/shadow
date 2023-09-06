@@ -47,20 +47,6 @@
 #include <sys/time.h>
 #include <time.h>
 
-#ifdef HAVE_MEMSET_EXPLICIT
-# define memzero(ptr, size) memset_explicit((ptr), 0, (size))
-#elif defined HAVE_EXPLICIT_BZERO	/* !HAVE_MEMSET_S */
-# define memzero(ptr, size) explicit_bzero((ptr), (size))
-#else					/* !HAVE_MEMSET_S && HAVE_EXPLICIT_BZERO */
-static inline void memzero(void *ptr, size_t size)
-{
-	ptr = memset(ptr, '\0', size);
-	__asm__ __volatile__ ("" : : "r"(ptr) : "memory");
-}
-#endif					/* !HAVE_MEMSET_S && !HAVE_EXPLICIT_BZERO */
-
-#define strzero(s) memzero(s, strlen(s))	/* warning: evaluates twice */
-
 #include <dirent.h>
 
 /*
@@ -168,18 +154,6 @@ static inline void memzero(void *ptr, size_t size)
 #else
 #define SCALE DAY
 #endif
-
-#define WIDTHOF(x)   (sizeof(x) * CHAR_BIT)
-#define NITEMS(arr)  (sizeof((arr)) / sizeof((arr)[0]))
-#define STRLEN(s)    (NITEMS(s) - 1)
-
-/* Copy string pointed by B to array A with size checking.  It was originally
-   in lmain.c but is _very_ useful elsewhere.  Some setuid root programs with
-   very sloppy coding used to assume that BUFSIZ will always be enough...  */
-
-					/* danger - side effects */
-#define STRFCPY(A,B) \
-	(strncpy((A), (B), sizeof(A) - 1), (A)[sizeof(A) - 1] = '\0')
 
 #ifndef PASSWD_FILE
 #define PASSWD_FILE "/etc/passwd"

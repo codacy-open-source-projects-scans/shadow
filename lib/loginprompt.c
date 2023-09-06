@@ -16,6 +16,7 @@
 #include <signal.h>
 
 #include "alloc.h"
+#include "memzero.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "getdef.h"
@@ -79,7 +80,7 @@ void login_prompt (char *name, int namesize)
 	 * removed.
 	 */
 
-	memzero (buf, sizeof buf);
+	MEMZERO(buf);
 	if (fgets (buf, sizeof buf, stdin) != buf) {
 		exit (EXIT_FAILURE);
 	}

@@ -47,7 +47,7 @@ AC_CHECK_HEADER([shadow.h],,[AC_MSG_ERROR([You need a libc with shadow.h])])
 
 AC_CHECK_FUNCS(arc4random_buf futimes \
 	getentropy getrandom getspnam getusershell \
-	initgroups lckpwdf lutimes mempcpy \
+	initgroups lckpwdf lutimes \
 	setgroups updwtmp updwtmpx innetgr \
 	getspnam_r \
 	rpmatch \
@@ -753,7 +753,6 @@ AC_CONFIG_FILES([
 	man/uk/Makefile
 	man/zh_CN/Makefile
 	man/zh_TW/Makefile
-	libmisc/Makefile
 	lib/Makefile
 	libsubid/Makefile
 	libsubid/subid.h

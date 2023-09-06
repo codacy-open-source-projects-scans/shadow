@@ -29,6 +29,7 @@
 #include "getdef.h"
 #include "shadowlog.h"
 #include <sys/resource.h>
+#include "memzero.h"
 #ifndef LIMITS_FILE
 #define LIMITS_FILE "/etc/limits"
 #endif
@@ -356,11 +357,11 @@ static int setup_user_limits (const char *uname)
 	char tempbuf[1024];
 
 	/* init things */
-	memzero (buf, sizeof (buf));
-	memzero (name, sizeof (name));
-	memzero (limits, sizeof (limits));
-	memzero (deflimits, sizeof (deflimits));
-	memzero (tempbuf, sizeof (tempbuf));
+	MEMZERO(buf);
+	MEMZERO(name);
+	MEMZERO(limits);
+	MEMZERO(deflimits);
+	MEMZERO(tempbuf);
 
 	/* start the checks */
 	fil = fopen (LIMITS_FILE, "r");
@@ -377,7 +378,7 @@ static int setup_user_limits (const char *uname)
 		if (('#' == buf[0]) || ('\n' == buf[0])) {
 			continue;
 		}
-		memzero (tempbuf, sizeof (tempbuf));
+		MEMZERO(tempbuf);
 		/* a valid line should have a username, then spaces,
 		 * then limits
 		 * we allow the format:
