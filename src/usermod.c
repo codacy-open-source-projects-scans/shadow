@@ -58,6 +58,8 @@
 #include "tcbfuncs.h"
 #endif
 #include "shadowlog.h"
+#include "sprintf.h"
+
 
 /*
  * exit status values
@@ -980,6 +982,7 @@ static void process_flags (int argc, char **argv)
 		int c;
 		static struct option long_options[] = {
 			{"append",       no_argument,       NULL, 'a'},
+			{"badname",      no_argument,       NULL, 'b'},
 			{"badnames",     no_argument,       NULL, 'b'},
 			{"comment",      required_argument, NULL, 'c'},
 			{"home",         required_argument, NULL, 'd'},
@@ -1002,8 +1005,8 @@ static void process_flags (int argc, char **argv)
 #ifdef ENABLE_SUBIDS
 			{"add-subuids",  required_argument, NULL, 'v'},
 			{"del-subuids",  required_argument, NULL, 'V'},
- 			{"add-subgids",  required_argument, NULL, 'w'},
- 			{"del-subgids",  required_argument, NULL, 'W'},
+			{"add-subgids",  required_argument, NULL, 'w'},
+			{"del-subgids",  required_argument, NULL, 'W'},
 #endif				/* ENABLE_SUBIDS */
 #ifdef WITH_SELINUX
 			{"selinux-user",  required_argument, NULL, 'Z'},
@@ -1264,20 +1267,12 @@ static void process_flags (int argc, char **argv)
 		user_newgid = user_gid;
 	}
 	if (prefix[0]) {
-		size_t len = strlen(prefix) + strlen(user_home) + 2;
-		int wlen;
-		prefix_user_home = XMALLOC(len, char);
-		wlen = snprintf(prefix_user_home, len, "%s/%s", prefix, user_home);
-		assert (wlen == (int) len -1);
+		xasprintf(&prefix_user_home, "%s/%s", prefix, user_home);
 		if (user_newhome) {
-			len = strlen(prefix) + strlen(user_newhome) + 2;
-			prefix_user_newhome = XMALLOC(len, char);
-			wlen = snprintf(prefix_user_newhome, len, "%s/%s", prefix, user_newhome);
-			assert (wlen == (int) len -1);
+			xasprintf(&prefix_user_newhome, "%s/%s",
+			          prefix, user_newhome);
 		}
-
-	}
-	else {
+	} else {
 		prefix_user_home = user_home;
 		prefix_user_newhome = user_newhome;
 	}
@@ -2041,11 +2036,10 @@ static void update_faillog (void)
  */
 static void move_mailbox (void)
 {
-	const char *maildir;
-	char* mailfile;
-	int fd;
-	struct stat st;
-	size_t size;
+	int          fd;
+	char         *mailfile;
+	const char   *maildir;
+	struct stat  st;
 
 	maildir = getdef_str ("MAIL_DIR");
 #ifdef MAIL_SPOOL_DIR
@@ -2056,8 +2050,6 @@ static void move_mailbox (void)
 	if (NULL == maildir) {
 		return;
 	}
-	size = strlen(prefix) + strlen(maildir) + strlen(user_name) + 3;
-	mailfile = XMALLOC(size, char);
 
 	/*
 	 * O_NONBLOCK is to make sure open won't hang on mandatory locks.
@@ -2066,12 +2058,9 @@ static void move_mailbox (void)
 	 * between stat and chown).  --marekm
 	 */
 	if (prefix[0]) {
-		(void) snprintf (mailfile, size, "%s/%s/%s",
-	    	             prefix, maildir, user_name);
-	}
-	else {
-		(void) snprintf (mailfile, size, "%s/%s",
-	    	             maildir, user_name);
+		xasprintf(&mailfile, "%s/%s/%s", prefix, maildir, user_name);
+	} else {
+		xasprintf(&mailfile, "%s/%s", maildir, user_name);
 	}
 
 	fd = open (mailfile, O_RDONLY | O_NONBLOCK, 0);
@@ -2113,18 +2102,13 @@ static void move_mailbox (void)
 	(void) close (fd);
 
 	if (lflg) {
-		char* newmailfile;
-		size_t newsize;
+		char  *newmailfile;
 
-		newsize = strlen(prefix) + strlen(maildir) + strlen(user_newname) + 3;
-		newmailfile = XMALLOC(newsize, char);
 		if (prefix[0]) {
-			(void) snprintf (newmailfile, newsize, "%s/%s/%s",
-			                 prefix, maildir, user_newname);
-		}
-		else {
-			(void) snprintf (newmailfile, newsize, "%s/%s",
-			                 maildir, user_newname);
+			xasprintf(&newmailfile, "%s/%s/%s",
+			          prefix, maildir, user_newname);
+		} else {
+			xasprintf(&newmailfile, "%s/%s", maildir, user_newname);
 		}
 		if (   (link (mailfile, newmailfile) != 0)
 		    || (unlink (mailfile) != 0)) {
