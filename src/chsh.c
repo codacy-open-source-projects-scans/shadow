@@ -31,7 +31,7 @@
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
-#include "strlcpy.h"
+#include "strtcpy.h"
 
 #ifndef SHELLS_FILE
 #define SHELLS_FILE "/etc/shells"
@@ -258,7 +258,7 @@ static void process_flags (int argc, char **argv)
 			break;
 		case 's':
 			sflg = true;
-			STRLCPY(loginsh, optarg);
+			STRTCPY(loginsh, optarg);
 			break;
 		default:
 			usage (E_USAGE);
@@ -553,7 +553,7 @@ int main (int argc, char **argv)
 	 * file, or use the value from the command line.
 	 */
 	if (!sflg) {
-		STRLCPY(loginsh, pw->pw_shell);
+		STRTCPY(loginsh, pw->pw_shell);
 	}
 
 	/*

@@ -4,21 +4,23 @@
  */
 
 
-#ifndef SHADOW_INCLUDE_LIB_STRLCPY_H_
-#define SHADOW_INCLUDE_LIB_STRLCPY_H_
+#ifndef SHADOW_INCLUDE_LIB_STRTCPY_H_
+#define SHADOW_INCLUDE_LIB_STRTCPY_H_
 
 
 #include <config.h>
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "sizeof.h"
 
 
 /*
  * SYNOPSIS
- *	int STRLCPY(char dst[restrict], const char *restrict src);
+ *	int STRTCPY(char dst[restrict], const char *restrict src);
  *
  * ARGUMENTS
  *	dst	Destination buffer where to copy a string.
@@ -42,21 +44,31 @@
  */
 
 
-#define STRLCPY(dst, src)  strlcpy_(dst, src, SIZEOF_ARRAY(dst))
+#define STRTCPY(dst, src)  strtcpy(dst, src, SIZEOF_ARRAY(dst))
 
 
-inline size_t strlcpy_(char *restrict dst, const char *restrict src,
-    size_t size);
+inline ssize_t strtcpy(char *restrict dst, const char *restrict src,
+    size_t dsize);
 
 
-inline size_t
-strlcpy_(char *restrict dst, const char *restrict src, size_t size)
+inline ssize_t
+strtcpy(char *restrict dst, const char *restrict src, size_t dsize)
 {
-	size_t  len;
+	bool    trunc;
+	char    *p;
+	size_t  dlen, slen;
 
-	len = strlcpy(dst, src, size);
+	if (dsize == 0)
+		return -1;
 
-	return (len >= size) ? -1 : len;
+	slen = strnlen(src, dsize);
+	trunc = (slen == dsize);
+	dlen = slen - trunc;
+
+	p = mempcpy(dst, src, dlen);
+	*p = '\0';
+
+	return trunc ? -1 : slen;
 }
 
 

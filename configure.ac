@@ -243,9 +243,6 @@ AC_ARG_WITH(skey,
 AC_ARG_WITH(tcb,
 	[AS_HELP_STRING([--with-tcb], [use tcb support (incomplete) @<:@default=yes if found@:>@])],
 	[with_tcb=$withval], [with_tcb=maybe])
-AC_ARG_WITH(libcrack,
-	[AS_HELP_STRING([--with-libcrack], [use libcrack @<:@default=no@:>@])],
-	[with_libcrack=$withval], [with_libcrack=no])
 AC_ARG_WITH(sha-crypt,
 	[AS_HELP_STRING([--with-sha-crypt], [allow the SHA256 and SHA512 password encryption algorithms @<:@default=yes@:>@])],
 	[with_sha_crypt=$withval], [with_sha_crypt=yes])
@@ -434,7 +431,6 @@ if test "$with_libbsd" != "no"; then
 	AC_DEFINE(WITH_LIBBSD, 1, [Build shadow with libbsd support])
 else
 	AC_DEFINE(WITH_LIBBSD, 0, [Build shadow without libbsd support])
-	AC_CHECK_FUNC(strlcpy, [], [AC_MSG_ERROR([strlcpy is required from glibc >= 2.38 or libbsd])])
 fi
 AM_CONDITIONAL(WITH_LIBBSD, test x$with_libbsd = xyes)
 
@@ -520,17 +516,6 @@ if test "$with_audit" != "no"; then
 	else
 		with_audit="no"
 	fi
-fi
-
-AC_SUBST(LIBCRACK)
-if test "$with_libcrack" = "yes"; then
-	echo "checking cracklib flavour, don't be surprised by the results"
-	AC_CHECK_LIB(crack, FascistCheck,
-		[LIBCRACK=-lcrack AC_DEFINE(HAVE_LIBCRACK, 1, [Defined if you have libcrack.])])
-	AC_CHECK_LIB(crack, FascistHistory,
-		AC_DEFINE(HAVE_LIBCRACK_HIST, 1, [Defined if you have the ts&szs cracklib.]))
-	AC_CHECK_LIB(crack, FascistHistoryPw,
-		AC_DEFINE(HAVE_LIBCRACK_PW, 1, [Defined if it includes *Pw functions.]))
 fi
 
 if test "$with_btrfs" != "no"; then
@@ -773,7 +758,6 @@ echo
 echo "shadow will be compiled with the following features:"
 echo
 echo "	auditing support:		$with_audit"
-echo "	CrackLib support:		$with_libcrack"
 echo "	PAM support:			$with_libpam"
 if test "$with_libpam" = "yes"; then
 echo "	suid account management tools:	$enable_acct_tools_setuid"
