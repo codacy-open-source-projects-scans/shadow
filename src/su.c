@@ -47,6 +47,7 @@
 #endif				/* !USE_PAM */
 
 #include "alloc.h"
+#include "attr.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "pwauth.h"
@@ -57,7 +58,7 @@
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
-#include "strtcpy.h"
+#include "string/strtcpy.h"
 
 /*
  * Global variables

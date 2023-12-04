@@ -4,6 +4,8 @@ if HAVE_CMOCKA
 TESTS = $(check_PROGRAMS)
 
 check_PROGRAMS = \
+    test_chkname \
+    test_strncpy \
     test_strtcpy \
     test_xasprintf
 
@@ -13,6 +15,19 @@ check_PROGRAMS += \
 endif # ENABLE_LOGIND
 
 check_PROGRAMS += \
+    $(NULL)
+
+test_chkname_SOURCES = \
+    ../../lib/chkname.c \
+    test_chkname.c \
+    $(NULL)
+test_chkname_CFLAGS = \
+    $(AM_FLAGS) \
+    $(NULL)
+test_chkname_LDFLAGS = \
+    $(NULL)
+test_chkname_LDADD = \
+    $(CMOCKA_LIBS) \
     $(NULL)
 
 test_logind_SOURCES = \
@@ -32,8 +47,20 @@ test_logind_LDADD = \
     $(LIBSYSTEMD) \
     $(NULL)
 
+test_strncpy_SOURCES = \
+    test_strncpy.c \
+    $(NULL)
+test_strncpy_CFLAGS = \
+    $(AM_FLAGS) \
+    $(NULL)
+test_strncpy_LDFLAGS = \
+    $(NULL)
+test_strncpy_LDADD = \
+    $(CMOCKA_LIBS) \
+    $(NULL)
+
 test_strtcpy_SOURCES = \
-    ../../lib/strtcpy.c \
+    ../../lib/string/strtcpy.c \
     test_strtcpy.c \
     $(NULL)
 test_strtcpy_CFLAGS = \
@@ -46,7 +73,7 @@ test_strtcpy_LDADD = \
     $(NULL)
 
 test_xasprintf_SOURCES = \
-    ../../lib/sprintf.c \
+    ../../lib/string/sprintf.c \
     test_xasprintf.c \
     $(NULL)
 test_xasprintf_CFLAGS = \

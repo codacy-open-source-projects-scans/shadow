@@ -63,7 +63,7 @@
 #include "tcbfuncs.h"
 #endif
 #include "shadowlog.h"
-#include "sprintf.h"
+#include "string/sprintf.h"
 
 
 #ifndef SKEL_DIR
@@ -875,7 +875,7 @@ static struct group * get_local_group(char * grp_name)
 {
 	const struct group *grp;
 	struct group *result_grp = NULL;
-	long long int gid;
+	long long  gid;
 	char *endptr;
 
 	gid = strtoll (grp_name, &endptr, 10);

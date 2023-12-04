@@ -19,6 +19,7 @@
 #include <stdio.h>
 
 #include "alloc.h"
+#include "attr.h"
 #include "prototypes.h"
 #include "defines.h"
 #ifdef WITH_SELINUX
@@ -35,7 +36,7 @@
 #include <attr/libattr.h>
 #endif				/* WITH_ATTR */
 #include "shadowlog.h"
-#include "sprintf.h"
+#include "string/sprintf.h"
 
 
 static /*@null@*/const char *src_orig;

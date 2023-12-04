@@ -31,6 +31,7 @@
 #include <lastlog.h>
 #endif /* ENABLE_LASTLOG */
 
+#include "attr.h"
 #include "defines.h"
 #include "commonio.h"
 
@@ -152,7 +153,7 @@ extern int get_gid (const char *gidstr, gid_t *gid);
 extern /*@only@*//*@null@*/struct group *getgr_nam_gid (/*@null@*/const char *grname);
 
 /* getlong.c */
-extern int getlong (const char *numstr, /*@out@*/long int *result);
+extern int getlong (const char *numstr, /*@out@*/long *result);
 
 /* get_pid.c */
 extern int get_pid (const char *pidstr, pid_t *pid);
@@ -171,7 +172,7 @@ extern time_t gettime (void);
 extern int get_uid (const char *uidstr, uid_t *uid);
 
 /* getulong.c */
-extern int getulong (const char *numstr, /*@out@*/unsigned long int *result);
+extern int getulong (const char *numstr, /*@out@*/unsigned long *result);
 
 /* fputsx.c */
 extern /*@null@*/char *fgetsx (/*@returned@*/ /*@out@*/char *, int, FILE *);

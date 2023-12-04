@@ -26,6 +26,7 @@
 #include <assert.h>
 
 #include "alloc.h"
+#include "attr.h"
 #include "defines.h"
 #include "faillog.h"
 #include "failure.h"
@@ -36,7 +37,7 @@
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
-#include "strtcpy.h"
+#include "string/strtcpy.h"
 
 #ifdef USE_PAM
 #include "pam_defs.h"

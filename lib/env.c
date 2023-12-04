@@ -20,7 +20,7 @@
 #include "prototypes.h"
 #include "defines.h"
 #include "shadowlog.h"
-#include "sprintf.h"
+#include "string/sprintf.h"
 
 
 /*
@@ -192,8 +192,7 @@ void set_env (int argc, char *const *argv)
 			}
 
 			if (NULL != *p) {
-				strncpy (variable, *argv, (size_t)(cp - *argv));
-				variable[cp - *argv] = '\0';
+				stpcpy(mempcpy(variable, *argv, (size_t)(cp - *argv)), "");
 				printf (_("You may not change $%s\n"),
 					variable);
 				continue;

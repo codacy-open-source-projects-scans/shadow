@@ -28,7 +28,7 @@
 #endif				/* ENABLE_SUBIDS */
 #include "getdef.h"
 #include "shadowlog.h"
-#include "sprintf.h"
+#include "string/sprintf.h"
 
 
 static char *passwd_db_file = NULL;
@@ -337,7 +337,7 @@ extern void prefix_endgrent(void)
 
 extern struct group *prefix_getgr_nam_gid(const char *grname)
 {
-	long long int gid;
+	long long  gid;
 	char *endptr;
 	struct group *g;
 

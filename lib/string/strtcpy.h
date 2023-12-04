@@ -31,7 +31,7 @@
  *	at the buffer pointed to by dst.  If the destination buffer,
  *	isn't large enough to hold the copy, the resulting string is
  *	truncated.  The size of the buffer is calculated internally via
- *	SIZEOF_ARRAY().
+ *	NITEMS().
  *
  * RETURN VALUE
  *	-1	If this call truncated the resulting string.
@@ -44,7 +44,7 @@
  */
 
 
-#define STRTCPY(dst, src)  strtcpy(dst, src, SIZEOF_ARRAY(dst))
+#define STRTCPY(dst, src)  strtcpy(dst, src, NITEMS(dst))
 
 
 inline ssize_t strtcpy(char *restrict dst, const char *restrict src,
@@ -55,7 +55,6 @@ inline ssize_t
 strtcpy(char *restrict dst, const char *restrict src, size_t dsize)
 {
 	bool    trunc;
-	char    *p;
 	size_t  dlen, slen;
 
 	if (dsize == 0)
@@ -65,8 +64,7 @@ strtcpy(char *restrict dst, const char *restrict src, size_t dsize)
 	trunc = (slen == dsize);
 	dlen = slen - trunc;
 
-	p = mempcpy(dst, src, dlen);
-	*p = '\0';
+	stpcpy(mempcpy(dst, src, dlen), "");
 
 	return trunc ? -1 : slen;
 }

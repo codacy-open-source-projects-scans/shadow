@@ -24,8 +24,9 @@
 
 #include "alloc.h"
 #include "sizeof.h"
-#include "strtcpy.h"
-#include "zustr2stp.h"
+#include "string/strncpy.h"
+#include "string/strtcpy.h"
+#include "string/zustr2stp.h"
 
 #ident "$Id$"
 
@@ -169,8 +170,7 @@ int get_session_host (char **out)
 #ifdef HAVE_STRUCT_UTMP_UT_HOST
 	if ((ut != NULL) && (ut->ut_host[0] != '\0')) {
 		hostname = XMALLOC(sizeof(ut->ut_host) + 1, char);
-		strncpy (hostname, ut->ut_host, sizeof (ut->ut_host));
-		hostname[sizeof (ut->ut_host)] = '\0';
+		ZUSTR2STP(hostname, ut->ut_host);
 		*out = hostname;
 		free (ut);
 	} else {
@@ -246,7 +246,7 @@ static
 #ifdef HAVE_STRUCT_UTMP_UT_HOST
 	} else if (   (NULL != ut)
 	           && ('\0' != ut->ut_host[0])) {
-		hostname = XMALLOC(SIZEOF_ARRAY(ut->ut_host) + 1, char);
+		hostname = XMALLOC(NITEMS(ut->ut_host) + 1, char);
 		ZUSTR2STP(hostname, ut->ut_host);
 #endif				/* HAVE_STRUCT_UTMP_UT_HOST */
 	}
@@ -263,25 +263,25 @@ static
 	utent->ut_type = USER_PROCESS;
 #endif				/* HAVE_STRUCT_UTMP_UT_TYPE */
 	utent->ut_pid = getpid ();
-	strncpy (utent->ut_line, line,      sizeof (utent->ut_line) - 1);
+	STRNCPY(utent->ut_line, line);
 #ifdef HAVE_STRUCT_UTMP_UT_ID
 	if (NULL != ut) {
-		strncpy (utent->ut_id, ut->ut_id, sizeof (utent->ut_id));
+		STRNCPY(utent->ut_id, ut->ut_id);
 	} else {
 		/* XXX - assumes /dev/tty?? */
-		strncpy (utent->ut_id, line + 3, sizeof (utent->ut_id) - 1);
+		STRNCPY(utent->ut_id, line + 3);
 	}
 #endif				/* HAVE_STRUCT_UTMP_UT_ID */
 #ifdef HAVE_STRUCT_UTMP_UT_NAME
-	strncpy (utent->ut_name, name,      sizeof (utent->ut_name));
+	STRNCPY(utent->ut_name, name);
 #endif				/* HAVE_STRUCT_UTMP_UT_NAME */
 #ifdef HAVE_STRUCT_UTMP_UT_USER
-	strncpy (utent->ut_user, name,      sizeof (utent->ut_user) - 1);
+	STRNCPY(utent->ut_user, name);
 #endif				/* HAVE_STRUCT_UTMP_UT_USER */
 	if (NULL != hostname) {
 		struct addrinfo *info = NULL;
 #ifdef HAVE_STRUCT_UTMP_UT_HOST
-		strncpy (utent->ut_host, hostname, sizeof (utent->ut_host) - 1);
+		STRNCPY(utent->ut_host, hostname);
 #endif				/* HAVE_STRUCT_UTMP_UT_HOST */
 #ifdef HAVE_STRUCT_UTMP_UT_SYSLEN
 		utent->ut_syslen = MIN (strlen (hostname),
