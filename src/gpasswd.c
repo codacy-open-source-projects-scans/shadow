@@ -79,6 +79,7 @@ static uid_t bywho;
 #endif
 
 /* local function prototypes */
+NORETURN static void failure(void);
 static void usage (int status);
 static void catch_signals (int killed);
 static bool is_valid_user_list (const char *users);
@@ -200,11 +201,11 @@ static bool is_valid_user_list (const char *users)
 	return is_valid;
 }
 
-static void failure (void)
+static void failure(void)
 {
-	fprintf (stderr, _("%s: Permission denied.\n"), Prog);
-	log_gpasswd_failure (": Permission denied");
-	exit (E_NOPERM);
+	fprintf(stderr, _("%s: Permission denied.\n"), Prog);
+	log_gpasswd_failure(": Permission denied");
+	exit(E_NOPERM);
 }
 
 /*
@@ -710,8 +711,7 @@ static void check_perms (const struct group *gr)
 		}
 	} else
 #endif				/* SHADOWGRP */
-	{
-#ifdef FIRST_MEMBER_IS_ADMIN
+	if (!amroot) {
 		/*
 		 * The policy here for changing a group is that
 		 * 1) you must be root or
@@ -726,20 +726,14 @@ static void check_perms (const struct group *gr)
 		 * first group member might be just a normal user.
 		 * --marekm
 		 */
-		if (!amroot) {
-			if (gr->gr_mem[0] == NULL) {
-				failure ();
-			}
-
-			if (strcmp (gr->gr_mem[0], myname) != 0) {
-				failure ();
-			}
-		}
-#else				/* ! FIRST_MEMBER_IS_ADMIN */
-		if (!amroot) {
-			failure ();
-		}
+#if !defined(FIRST_MEMBER_IS_ADMIN)
+		failure();
 #endif
+		if (gr->gr_mem[0] == NULL)
+			failure();
+
+		if (strcmp(gr->gr_mem[0], myname) != 0)
+			failure();
 	}
 }
 

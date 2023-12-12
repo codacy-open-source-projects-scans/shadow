@@ -45,8 +45,10 @@ static int setrlimit_value (unsigned int resource,
                             const char *value,
                             unsigned int multiplier)
 {
-	struct rlimit rlim;
-	rlim_t limit;
+	char           *endptr;
+	long           l;
+	rlim_t         limit;
+	struct rlimit  rlim;
 
 	/* The "-" is special, not belonging to a strange negative limit.
 	 * It is infinity, in a controlled way.
@@ -60,18 +62,13 @@ static int setrlimit_value (unsigned int resource,
 		 * Also, we are limited to base 10 here (hex numbers will not
 		 * work with the limit string parser as is anyway)
 		 */
-		char *endptr;
-		long longlimit = strtol (value, &endptr, 10);
-		if ((0 == longlimit) && (value == endptr)) {
-			/* No argument at all. No-op.
-			 * FIXME: We could instead throw an error, though.
-			 */
-			return 0;
-		}
-		longlimit *= multiplier;
-		limit = longlimit;
-		if (longlimit != limit)
-		{
+		errno = 0;
+		l = strtol(value, &endptr, 10);
+
+		if (value == endptr || errno != 0)
+			return 0;  // FIXME: We could instead throw an error, though.
+
+		if (__builtin_mul_overflow(l, multiplier, &limit)) {
 			/* FIXME: Again, silent error handling...
 			 * Wouldn't screaming make more sense?
 			 */
