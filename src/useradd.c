@@ -524,26 +524,25 @@ static void show_defaults (void)
  */
 static int set_defaults (void)
 {
-	FILE *ifp;
-	FILE *ofp;
-	char buf[1024];
-	char *new_file = NULL;
-	char *new_file_dup = NULL;
-	char *default_file = USER_DEFAULTS_FILE;
-	char *cp;
-	int ofd;
-	int wlen;
-	bool out_group = false;
-	bool out_groups = false;
-	bool out_home = false;
-	bool out_inactive = false;
-	bool out_expire = false;
-	bool out_shell = false;
-	bool out_skel = false;
-	bool out_usrskel = false;
-	bool out_create_mail_spool = false;
-	bool out_log_init = false;
-	int ret = -1;
+	int   ofd;
+	int   ret = -1;
+	bool  out_group = false;
+	bool  out_groups = false;
+	bool  out_home = false;
+	bool  out_inactive = false;
+	bool  out_expire = false;
+	bool  out_shell = false;
+	bool  out_skel = false;
+	bool  out_usrskel = false;
+	bool  out_create_mail_spool = false;
+	bool  out_log_init = false;
+	char  buf[1024];
+	char  *new_file = NULL;
+	char  *new_file_dup = NULL;
+	char  *default_file = USER_DEFAULTS_FILE;
+	char  *cp;
+	FILE  *ifp;
+	FILE  *ofp;
 
 
 	if (asprintf(&new_file, "%s%s%s", prefix, prefix[0]?"/":"", NEW_USER_FILE) == -1)
@@ -711,8 +710,7 @@ static int set_defaults (void)
 	/*
 	 * Rename the current default file to its backup name.
 	 */
-	wlen = snprintf (buf, sizeof buf, "%s-", default_file);
-	assert (wlen < (int) sizeof buf);
+	assert(SNPRINTF(buf, "%s-", default_file) != -1);
 	unlink (buf);
 	if ((link (default_file, buf) != 0) && (ENOENT != errno)) {
 		int err = errno;
@@ -2041,7 +2039,7 @@ static void faillog_reset (uid_t uid)
 		         Prog, (unsigned long) uid, strerror (errno));
 		SYSLOG ((LOG_WARN, "failed to reset the faillog entry of UID %lu", (unsigned long) uid));
 	}
-	if (close (fd) != 0) {
+	if (close (fd) != 0 && errno != EINTR) {
 		fprintf (stderr,
 		         _("%s: failed to close the faillog file for UID %lu: %s\n"),
 		         Prog, (unsigned long) uid, strerror (errno));
@@ -2087,7 +2085,7 @@ static void lastlog_reset (uid_t uid)
 		SYSLOG ((LOG_WARN, "failed to reset the lastlog entry of UID %lu", (unsigned long) uid));
 		/* continue */
 	}
-	if (close (fd) != 0) {
+	if (close (fd) != 0 && errno != EINTR) {
 		fprintf (stderr,
 		         _("%s: failed to close the lastlog file for UID %lu: %s\n"),
 		         Prog, (unsigned long) uid, strerror (errno));
@@ -2319,6 +2317,7 @@ static void create_home (void)
 					Prog, path);
 				fail_exit(E_HOMEDIR);
 			}
+			free(btrfs_check);
 			// make subvolume to mount for user instead of directory
 			if (btrfs_create_subvolume(path)) {
 				fprintf(stderr,
@@ -2387,7 +2386,6 @@ static void create_mail (void)
 	char          *file;
 	gid_t         gid;
 	mode_t        mode;
-	size_t        size;
 	const char    *spool;
 	struct group  *gr;
 
@@ -2403,12 +2401,10 @@ static void create_mail (void)
 	if (NULL == spool) {
 		return;
 	}
-	size = strlen(prefix) + strlen(spool) + strlen(user_name) + 3;
-	file = XMALLOC(size, char);
 	if (prefix[0])
-		sprintf(file, "%s/%s/%s", prefix, spool, user_name);
+		xasprintf(&file, "%s/%s/%s", prefix, spool, user_name);
 	else
-		sprintf(file, "%s/%s", spool, user_name);
+		xasprintf(&file, "%s/%s", spool, user_name);
 
 #ifdef WITH_SELINUX
 	if (set_selinux_file_context(file, S_IFREG) != 0) {
@@ -2444,8 +2440,12 @@ static void create_mail (void)
 		perror(_("Setting mailbox file permissions"));
 	}
 
-	fsync(fd);
-	close(fd);
+	if (fsync(fd) != 0) {
+		perror (_("Synchronize mailbox file"));
+	}
+	if (close(fd) != 0 && errno != EINTR) {
+		perror (_("Closing mailbox file"));
+	}
 #ifdef WITH_SELINUX
 	/* Reset SELinux to create files with default contexts */
 	if (reset_selinux_file_context() != 0) {

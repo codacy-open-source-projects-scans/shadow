@@ -23,6 +23,8 @@
 #include "subordinateio.h"
 #endif				/* ENABLE_SUBIDS */
 #include "shadowlog.h"
+#include "string/sprintf.h"
+
 
 #ifdef __linux__
 static int check_status (const char *name, const char *sname, uid_t uid);
@@ -83,11 +85,11 @@ static int user_busy_utmp (const char *name)
 static int different_namespace (const char *sname)
 {
 	/* 41: /proc/xxxxxxxxxx/task/xxxxxxxxxx/ns/user + \0 */
-	char path[41];
-	char buf[512], buf2[512];
-	ssize_t llen1, llen2;
+	char     path[41];
+	char     buf[512], buf2[512];
+	ssize_t  llen1, llen2;
 
-	snprintf (path, 41, "/proc/%s/ns/user", sname);
+	SNPRINTF(path, "/proc/%s/ns/user", sname);
 
 	if ((llen1 = readlink (path, buf, sizeof(buf))) == -1)
 		return 0;
@@ -106,11 +108,11 @@ static int different_namespace (const char *sname)
 static int check_status (const char *name, const char *sname, uid_t uid)
 {
 	/* 40: /proc/xxxxxxxxxx/task/xxxxxxxxxx/status + \0 */
-	char status[40];
-	char line[1024];
-	FILE *sfile;
+	char  status[40];
+	char  line[1024];
+	FILE  *sfile;
 
-	snprintf (status, 40, "/proc/%s/status", sname);
+	SNPRINTF(status, "/proc/%s/status", sname);
 
 	sfile = fopen (status, "r");
 	if (NULL == sfile) {
@@ -151,16 +153,16 @@ static int check_status (const char *name, const char *sname, uid_t uid)
 
 static int user_busy_processes (const char *name, uid_t uid)
 {
-	DIR *proc;
-	struct dirent *ent;
-	char *tmp_d_name;
-	pid_t pid;
-	DIR *task_dir;
+	DIR            *proc;
+	DIR            *task_dir;
+	char           *tmp_d_name;
 	/* 22: /proc/xxxxxxxxxx/task + \0 */
-	char task_path[22];
-	char root_path[22];
-	struct stat sbroot;
-	struct stat sbroot_process;
+	char           task_path[22];
+	char           root_path[22];
+	pid_t          pid;
+	struct stat    sbroot;
+	struct stat    sbroot_process;
+	struct dirent  *ent;
 
 #ifdef ENABLE_SUBIDS
 	sub_uid_open (O_RDONLY);
@@ -205,8 +207,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 		}
 
 		/* Check if the process is in our chroot */
-		snprintf (root_path, 22, "/proc/%lu/root", (unsigned long) pid);
-		root_path[21] = '\0';
+		SNPRINTF(root_path, "/proc/%lu/root", (unsigned long) pid);
 		if (stat (root_path, &sbroot_process) != 0) {
 			continue;
 		}
@@ -226,8 +227,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 			return 1;
 		}
 
-		snprintf (task_path, 22, "/proc/%lu/task", (unsigned long) pid);
-		task_path[21] = '\0';
+		SNPRINTF(task_path, "/proc/%lu/task", (unsigned long) pid);
 		task_dir = opendir (task_path);
 		if (task_dir != NULL) {
 			while ((ent = readdir (task_dir)) != NULL) {

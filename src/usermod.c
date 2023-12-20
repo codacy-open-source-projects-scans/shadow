@@ -1963,7 +1963,11 @@ static void update_lastlog (void)
 		}
 	}
 
-	(void) close (fd);
+	if (close (fd) != 0 && errno != EINTR) {
+		fprintf (stderr,
+		         _("%s: failed to copy the lastlog entry of user %ju to user %ju: %s\n"),
+		         Prog, (uintmax_t) user_id, (uintmax_t) user_newid, strerror (errno));
+	}
 }
 #endif /* ENABLE_LASTLOG */
 
@@ -2023,7 +2027,11 @@ static void update_faillog (void)
 		}
 	}
 
-	(void) close (fd);
+	if (close (fd) != 0 && errno != EINTR) {
+		fprintf (stderr,
+		         _("%s: failed to copy the faillog entry of user %ju to user %ju: %s\n"),
+		         Prog, (uintmax_t) user_id, (uintmax_t) user_newid, strerror (errno));
+	}
 }
 
 #ifndef NO_MOVE_MAILBOX
@@ -2161,7 +2169,7 @@ int main (int argc, char **argv)
 #endif
 
 	sys_ngroups = sysconf (_SC_NGROUPS_MAX);
-	user_groups = MALLOC(sys_ngroups + 1, char *);
+	user_groups = XMALLOC(sys_ngroups + 1, char *);
 	user_groups[0] = NULL;
 
 	is_shadow_pwd = spw_file_present ();

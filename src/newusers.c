@@ -50,6 +50,8 @@
 #endif				/* ENABLE_SUBIDS */
 #include "chkname.h"
 #include "shadowlog.h"
+#include "string/sprintf.h"
+
 
 /*
  * Global variables
@@ -90,8 +92,8 @@ static bool sub_gid_locked = false;
 #endif				/* ENABLE_SUBIDS */
 
 /* local function prototypes */
-static void usage (int status);
-static void fail_exit (int);
+NORETURN static void usage (int status);
+NORETURN static void fail_exit (int);
 static int add_group (const char *, const char *, gid_t *, gid_t);
 static int get_user_id (const char *, uid_t *);
 static int add_user (const char *, uid_t, gid_t);
@@ -709,8 +711,9 @@ static void process_flags (int argc, char **argv)
 
 	if (argv[optind] != NULL) {
 		if (freopen (argv[optind], "r", stdin) == NULL) {
-			char buf[BUFSIZ];
-			snprintf (buf, sizeof buf, "%s: %s", Prog, argv[1]);
+			char  buf[BUFSIZ];
+
+			SNPRINTF(buf, "%s: %s", Prog, argv[1]);
 			perror (buf);
 			fail_exit (EXIT_FAILURE);
 		}
