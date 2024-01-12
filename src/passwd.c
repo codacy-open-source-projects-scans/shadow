@@ -343,7 +343,6 @@ static int new_password (const struct passwd *pw)
  */
 static void check_password (const struct passwd *pw, const struct spwd *sp)
 {
-	time_t now;
 	int exp_status;
 
 	exp_status = isexpired (pw, sp);
@@ -362,8 +361,6 @@ static void check_password (const struct passwd *pw, const struct spwd *sp)
 	if (amroot) {
 		return;
 	}
-
-	(void) time (&now);
 
 	/*
 	 * Expired accounts cannot be changed ever. Passwords which are
@@ -387,10 +384,12 @@ static void check_password (const struct passwd *pw, const struct spwd *sp)
 	 * Passwords may only be changed after sp_min time is up.
 	 */
 	if (sp->sp_lstchg > 0) {
-		time_t ok;
-		ok = (time_t) sp->sp_lstchg * SCALE;
-		if (sp->sp_min > 0) {
-			ok += (time_t) sp->sp_min * SCALE;
+		long now, ok;
+		now = time(NULL) / DAY;
+		ok = sp->sp_lstchg;
+		if (   (sp->sp_min > 0)
+		    && __builtin_add_overflow(ok, sp->sp_min, &ok)) {
+			ok = LONG_MAX;
 		}
 
 		if (now < ok) {
@@ -425,15 +424,15 @@ static void print_status (const struct passwd *pw)
 
 	sp = prefix_getspnam (pw->pw_name); /* local, no need for xprefix_getspnam */
 	if (NULL != sp) {
-		date_to_str (sizeof(date), date, sp->sp_lstchg * SCALE),
-		(void) printf ("%s %s %s %lld %lld %lld %lld\n",
+		date_to_str (sizeof(date), date, sp->sp_lstchg * DAY),
+		(void) printf ("%s %s %s %ld %ld %ld %ld\n",
 		               pw->pw_name,
 		               pw_status (sp->sp_pwdp),
 		               date,
-		               ((long long)sp->sp_min * SCALE) / DAY,
-		               ((long long)sp->sp_max * SCALE) / DAY,
-		               ((long long)sp->sp_warn * SCALE) / DAY,
-		               ((long long)sp->sp_inact * SCALE) / DAY);
+		               sp->sp_min,
+		               sp->sp_max,
+		               sp->sp_warn,
+		               sp->sp_inact);
 	} else if (NULL != pw->pw_passwd) {
 		(void) printf ("%s %s\n",
 		               pw->pw_name, pw_status (pw->pw_passwd));
@@ -611,21 +610,21 @@ static void update_shadow (void)
 	}
 	nsp->sp_pwdp = update_crypt_pw (nsp->sp_pwdp);
 	if (xflg) {
-		nsp->sp_max = (age_max * DAY) / SCALE;
+		nsp->sp_max = age_max;
 	}
 	if (nflg) {
-		nsp->sp_min = (age_min * DAY) / SCALE;
+		nsp->sp_min = age_min;
 	}
 	if (wflg) {
-		nsp->sp_warn = (warn * DAY) / SCALE;
+		nsp->sp_warn = warn;
 	}
 	if (iflg) {
-		nsp->sp_inact = (inact * DAY) / SCALE;
+		nsp->sp_inact = inact;
 	}
 	if (!use_pam)
 	{
 		if (do_update_age) {
-			nsp->sp_lstchg = gettime () / SCALE;
+			nsp->sp_lstchg = gettime () / DAY;
 			if (0 == nsp->sp_lstchg) {
 				/* Better disable aging than requiring a password
 				 * change */
@@ -776,7 +775,7 @@ int main (int argc, char **argv)
 				usage (E_SUCCESS);
 				/*@notreached@*/break;
 			case 'i':
-				if (   (getlong (optarg, &inact) == 0)
+				if (   (getlong(optarg, &inact) == -1)
 				    || (inact < -1)) {
 					fprintf (stderr,
 					         _("%s: invalid numeric argument '%s'\n"),
@@ -795,7 +794,7 @@ int main (int argc, char **argv)
 				anyflag = true;
 				break;
 			case 'n':
-				if (   (getlong (optarg, &age_min) == 0)
+				if (   (getlong(optarg, &age_min) == -1)
 				    || (age_min < -1)) {
 					fprintf (stderr,
 					         _("%s: invalid numeric argument '%s'\n"),
@@ -830,7 +829,7 @@ int main (int argc, char **argv)
 				anyflag = true;
 				break;
 			case 'w':
-				if (   (getlong (optarg, &warn) == 0)
+				if (   (getlong(optarg, &warn) == -1)
 				    || (warn < -1)) {
 					(void) fprintf (stderr,
 					                _("%s: invalid numeric argument '%s'\n"),
@@ -841,7 +840,7 @@ int main (int argc, char **argv)
 				anyflag = true;
 				break;
 			case 'x':
-				if (   (getlong (optarg, &age_max) == 0)
+				if (   (getlong(optarg, &age_max) == -1)
 				    || (age_max < -1)) {
 					(void) fprintf (stderr,
 					                _("%s: invalid numeric argument '%s'\n"),

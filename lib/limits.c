@@ -89,7 +89,7 @@ static int set_prio (const char *value)
 {
 	long prio;
 
-	if (   (getlong (value, &prio) == 0)
+	if (   (getlong(value, &prio) == -1)
 	    || (prio != (int) prio)) {
 		return 0;
 	}
@@ -104,7 +104,7 @@ static int set_umask (const char *value)
 {
 	unsigned long  mask;
 
-	if (   (getulong (value, &mask) == 0)
+	if (   (getulong(value, &mask) == -1)
 	    || (mask != (mode_t) mask)) {
 		return 0;
 	}
@@ -119,7 +119,7 @@ static int check_logins (const char *name, const char *maxlogins)
 {
 	unsigned long limit, count;
 
-	if (getulong (maxlogins, &limit) == 0) {
+	if (getulong(maxlogins, &limit) == -1) {
 		return 0;
 	}
 
@@ -482,7 +482,7 @@ void setup_limits (const struct passwd *info)
 			if (strncmp (cp, "pri=", 4) == 0) {
 				long  inc;
 
-				if (   (getlong (cp + 4, &inc) == 1)
+				if (   (getlong(cp + 4, &inc) == 0)
 				    && (inc >= -20) && (inc <= 20)) {
 					errno = 0;
 					if (   (nice (inc) != -1)
@@ -500,8 +500,7 @@ void setup_limits (const struct passwd *info)
 			}
 			if (strncmp (cp, "ulimit=", 7) == 0) {
 				long  blocks;
-
-				if (   (getlong (cp + 7, &blocks) == 0)
+				if (   (getlong(cp + 7, &blocks) == -1)
 				    || (blocks != (int) blocks)
 				    || (set_filesize_limit (blocks) != 0)) {
 					SYSLOG ((LOG_WARN,
@@ -513,7 +512,7 @@ void setup_limits (const struct passwd *info)
 			if (strncmp (cp, "umask=", 6) == 0) {
 				unsigned long  mask;
 
-				if (   (getulong (cp + 6, &mask) == 0)
+				if (   (getulong(cp + 6, &mask) == -1)
 				    || (mask != (mode_t) mask)) {
 					SYSLOG ((LOG_WARN,
 					         "Can't set umask value for user %s",

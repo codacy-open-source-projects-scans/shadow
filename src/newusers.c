@@ -239,7 +239,7 @@ static int add_group (const char *name, const char *gid, gid_t *ngid, uid_t uid)
 		 * new group, or an existing group.
 		 */
 
-		if (get_gid (gid, &grent.gr_gid) == 0) {
+		if (get_gid(gid, &grent.gr_gid) == -1) {
 			fprintf (stderr,
 			         _("%s: invalid group ID '%s'\n"),
 			         Prog, gid);
@@ -343,7 +343,7 @@ static int get_user_id (const char *uid, uid_t *nuid) {
 	 * caller provided, or the next available UID.
 	 */
 	if (isdigit (uid[0])) {
-		if ((get_uid (uid, nuid) == 0) || (*nuid == (uid_t)-1)) {
+		if ((get_uid(uid, nuid) == -1) || (*nuid == (uid_t)-1)) {
 			fprintf (stderr,
 			         _("%s: invalid user ID '%s'\n"),
 			         Prog, uid);
@@ -529,7 +529,7 @@ static int add_passwd (struct passwd *pwd, const char *password)
 			}
 			spent.sp_pwdp = cp;
 		}
-		spent.sp_lstchg = gettime () / SCALE;
+		spent.sp_lstchg = gettime () / DAY;
 		if (0 == spent.sp_lstchg) {
 			/* Better disable aging than requiring a password
 			 * change */
@@ -586,7 +586,7 @@ static int add_passwd (struct passwd *pwd, const char *password)
 	 */
 	spent.sp_pwdp = "!";
 #endif
-	spent.sp_lstchg = gettime () / SCALE;
+	spent.sp_lstchg = gettime () / DAY;
 	if (0 == spent.sp_lstchg) {
 		/* Better disable aging than requiring a password change */
 		spent.sp_lstchg = -1;
@@ -673,19 +673,19 @@ static void process_flags (int argc, char **argv)
 			}
 #if defined(USE_SHA_CRYPT)
 			if (  (   ((0 == strcmp (crypt_method, "SHA256")) || (0 == strcmp (crypt_method, "SHA512")))
-			       && (0 == getlong(optarg, &sha_rounds)))) {
+			       && (-1 == getlong(optarg, &sha_rounds)))) {
                             bad_s = 1;
                         }
 #endif				/* USE_SHA_CRYPT */
 #if defined(USE_BCRYPT)
                         if ((   (0 == strcmp (crypt_method, "BCRYPT"))
-			       && (0 == getlong(optarg, &bcrypt_rounds)))) {
+			       && (-1 == getlong(optarg, &bcrypt_rounds)))) {
                             bad_s = 1;
                         }
 #endif				/* USE_BCRYPT */
 #if defined(USE_YESCRYPT)
                         if ((   (0 == strcmp (crypt_method, "YESCRYPT"))
-			       && (0 == getlong(optarg, &yescrypt_cost)))) {
+			       && (-1 == getlong(optarg, &yescrypt_cost)))) {
                             bad_s = 1;
                         }
 #endif				/* USE_YESCRYPT */

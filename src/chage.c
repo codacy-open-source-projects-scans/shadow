@@ -167,22 +167,22 @@ static int new_fields (void)
 
 	SNPRINTF(buf, "%ld", mindays);
 	change_field (buf, sizeof buf, _("Minimum Password Age"));
-	if (   (getlong (buf, &mindays) == 0)
+	if (   (getlong(buf, &mindays) == -1)
 	    || (mindays < -1)) {
 		return 0;
 	}
 
 	SNPRINTF(buf, "%ld", maxdays);
 	change_field (buf, sizeof buf, _("Maximum Password Age"));
-	if (   (getlong (buf, &maxdays) == 0)
+	if (   (getlong(buf, &maxdays) == -1)
 	    || (maxdays < -1)) {
 		return 0;
 	}
 
-	if (-1 == lstchgdate || lstchgdate > LONG_MAX / SCALE) {
+	if (-1 == lstchgdate || lstchgdate > LONG_MAX / DAY) {
 		strcpy (buf, "-1");
 	} else {
-		date_to_str (sizeof(buf), buf, lstchgdate * SCALE);
+		date_to_str (sizeof(buf), buf, lstchgdate * DAY);
 	}
 
 	change_field (buf, sizeof buf, _("Last Password Change (YYYY-MM-DD)"));
@@ -198,22 +198,22 @@ static int new_fields (void)
 
 	SNPRINTF(buf, "%ld", warndays);
 	change_field (buf, sizeof buf, _("Password Expiration Warning"));
-	if (   (getlong (buf, &warndays) == 0)
+	if (   (getlong(buf, &warndays) == -1)
 	    || (warndays < -1)) {
 		return 0;
 	}
 
 	SNPRINTF(buf, "%ld", inactdays);
 	change_field (buf, sizeof buf, _("Password Inactive"));
-	if (   (getlong (buf, &inactdays) == 0)
+	if (   (getlong(buf, &inactdays) == -1)
 	    || (inactdays < -1)) {
 		return 0;
 	}
 
-	if (-1 == expdate || LONG_MAX / SCALE < expdate) {
+	if (-1 == expdate || LONG_MAX / DAY < expdate) {
 		strcpy (buf, "-1");
 	} else {
-		date_to_str (sizeof(buf), buf, expdate * SCALE);
+		date_to_str (sizeof(buf), buf, expdate * DAY);
 	}
 
 	change_field (buf, sizeof buf,
@@ -262,12 +262,12 @@ static void list_fields (void)
 	 * was last modified. The date is the number of days since 1/1/1970.
 	 */
 	(void) fputs (_("Last password change\t\t\t\t\t: "), stdout);
-	if (lstchgdate < 0 || lstchgdate > LONG_MAX / SCALE) {
+	if (lstchgdate < 0 || lstchgdate > LONG_MAX / DAY) {
 		(void) puts (_("never"));
 	} else if (lstchgdate == 0) {
 		(void) puts (_("password must be changed"));
 	} else {
-		changed = lstchgdate * SCALE;
+		changed = lstchgdate * DAY;
 		print_date (changed);
 	}
 
@@ -279,12 +279,12 @@ static void list_fields (void)
 	if (lstchgdate == 0) {
 		(void) puts (_("password must be changed"));
 	} else if (   (lstchgdate < 0)
-	           || (maxdays >= (10000 * (DAY / SCALE)))
+	           || (maxdays >= 10000)
 	           || (maxdays < 0)
-	           || ((LONG_MAX - changed) / SCALE < maxdays)) {
+	           || ((LONG_MAX - changed) / DAY < maxdays)) {
 		(void) puts (_("never"));
 	} else {
-		expires = changed + maxdays * SCALE;
+		expires = changed + maxdays * DAY;
 		print_date (expires);
 	}
 
@@ -299,13 +299,13 @@ static void list_fields (void)
 		(void) puts (_("password must be changed"));
 	} else if (   (lstchgdate < 0)
 	           || (inactdays < 0)
-	           || (maxdays >= (10000 * (DAY / SCALE)))
+	           || (maxdays >= 10000)
 	           || (maxdays < 0)
 	           || (maxdays > LONG_MAX - inactdays)
-	           || ((LONG_MAX - changed) / SCALE < maxdays + inactdays)) {
+	           || ((LONG_MAX - changed) / DAY < maxdays + inactdays)) {
 		(void) puts (_("never"));
 	} else {
-		expires = changed + (maxdays + inactdays) * SCALE;
+		expires = changed + (maxdays + inactdays) * DAY;
 		print_date (expires);
 	}
 
@@ -314,10 +314,10 @@ static void list_fields (void)
 	 * password expiring or not.
 	 */
 	(void) fputs (_("Account expires\t\t\t\t\t\t: "), stdout);
-	if (expdate < 0 || LONG_MAX / SCALE < expdate) {
+	if (expdate < 0 || LONG_MAX / DAY < expdate) {
 		(void) puts (_("never"));
 	} else {
-		expires = expdate * SCALE;
+		expires = expdate * DAY;
 		print_date (expires);
 	}
 
@@ -393,7 +393,7 @@ static void process_flags (int argc, char **argv)
 			break;
 		case 'I':
 			Iflg = true;
-			if (   (getlong (optarg, &inactdays) == 0)
+			if (   (getlong(optarg, &inactdays) == -1)
 			    || (inactdays < -1)) {
 				fprintf (stderr,
 				         _("%s: invalid numeric argument '%s'\n"),
@@ -406,7 +406,7 @@ static void process_flags (int argc, char **argv)
 			break;
 		case 'm':
 			mflg = true;
-			if (   (getlong (optarg, &mindays) == 0)
+			if (   (getlong(optarg, &mindays) == -1)
 			    || (mindays < -1)) {
 				fprintf (stderr,
 				         _("%s: invalid numeric argument '%s'\n"),
@@ -416,7 +416,7 @@ static void process_flags (int argc, char **argv)
 			break;
 		case 'M':
 			Mflg = true;
-			if (   (getlong (optarg, &maxdays) == 0)
+			if (   (getlong(optarg, &maxdays) == -1)
 			    || (maxdays < -1)) {
 				fprintf (stderr,
 				         _("%s: invalid numeric argument '%s'\n"),
@@ -430,7 +430,7 @@ static void process_flags (int argc, char **argv)
 			break;
 		case 'W':
 			Wflg = true;
-			if (   (getlong (optarg, &warndays) == 0)
+			if (   (getlong(optarg, &warndays) == -1)
 			    || (warndays < -1)) {
 				fprintf (stderr,
 				         _("%s: invalid numeric argument '%s'\n"),

@@ -617,7 +617,7 @@ static void new_spent (struct spwd *spent)
 	spent->sp_pwdp = new_pw_passwd (spent->sp_pwdp);
 
 	if (pflg) {
-		spent->sp_lstchg = gettime () / SCALE;
+		spent->sp_lstchg = gettime () / DAY;
 		if (0 == spent->sp_lstchg) {
 			/* Better disable aging than requiring a password
 			 * change. */
@@ -1064,11 +1064,10 @@ static void process_flags (int argc, char **argv)
 						 Prog, optarg);
 					exit (E_BAD_ARG);
 				}
-				user_newexpire *= DAY / SCALE;
 				eflg = true;
 				break;
 			case 'f':
-				if (   (getlong (optarg, &user_newinactive) == 0)
+				if (   (getlong(optarg, &user_newinactive) == -1)
 				    || (user_newinactive < -1)) {
 					fprintf (stderr,
 					         _("%s: invalid numeric argument '%s'\n"),
@@ -1152,7 +1151,7 @@ static void process_flags (int argc, char **argv)
 				sflg = true;
 				break;
 			case 'u':
-				if (   (get_uid (optarg, &user_newid) ==0)
+				if (   (get_uid(optarg, &user_newid) == -1)
 				    || (user_newid == (uid_t)-1)) {
 					fprintf (stderr,
 					         _("%s: invalid user ID '%s'\n"),
@@ -1742,7 +1741,7 @@ static void usr_update (void)
 			spent.sp_pwdp   = xstrdup (pwent.pw_passwd);
 			pwent.pw_passwd = xstrdup (SHADOW_PASSWD_STRING);
 
-			spent.sp_lstchg = gettime () / SCALE;
+			spent.sp_lstchg = gettime () / DAY;
 			if (0 == spent.sp_lstchg) {
 				/* Better disable aging than
 				 * requiring a password change */
