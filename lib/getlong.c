@@ -21,7 +21,7 @@
  * It supports decimal, hexadecimal or octal representations.
  */
 int
-getlong(const char *numstr, /*@out@*/long *result)
+getlong(const char *restrict numstr, long *restrict result)
 {
 	char  *endptr;
 	long  val;

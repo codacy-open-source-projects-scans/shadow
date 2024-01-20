@@ -114,9 +114,6 @@ extern void date_to_str (size_t size, char buf[size], long date);
 /* encrypt.c */
 extern /*@exposed@*//*@null@*/char *pw_encrypt (const char *, const char *);
 
-/* entry.c */
-extern void pw_entry (const char *, struct passwd *);
-
 /* env.c */
 extern void addenv (const char *, /*@null@*/const char *);
 extern void initenv (void);
@@ -153,7 +150,8 @@ extern int get_gid (const char *gidstr, gid_t *gid);
 extern /*@only@*//*@null@*/struct group *getgr_nam_gid (/*@null@*/const char *grname);
 
 /* getlong.c */
-extern int getlong (const char *numstr, /*@out@*/long *result);
+ATTR_ACCESS(write_only, 2)
+extern int getlong(const char *restrict numstr, long *restrict result);
 
 /* get_pid.c */
 extern int get_pid (const char *pidstr, pid_t *pid);
@@ -172,10 +170,12 @@ extern time_t gettime (void);
 extern int get_uid (const char *uidstr, uid_t *uid);
 
 /* getulong.c */
-extern int getulong (const char *numstr, /*@out@*/unsigned long *result);
+ATTR_ACCESS(write_only, 2)
+extern int getulong(const char *restrict numstr, unsigned long *restrict result);
 
 /* fputsx.c */
-extern /*@null@*/char *fgetsx (/*@returned@*/ /*@out@*/char *, int, FILE *);
+ATTR_ACCESS(write_only, 1, 2)
+extern /*@null@*/char *fgetsx(/*@returned@*/char *restrict, int, FILE *restrict);
 extern int fputsx (const char *, FILE *);
 
 /* groupio.c */
@@ -187,7 +187,7 @@ extern void __gr_set_changed (void);
 /* groupmem.c */
 extern /*@null@*/ /*@only@*/struct group *__gr_dup (const struct group *grent);
 extern void gr_free_members (struct group *grent);
-extern void gr_free (/*@out@*/ /*@only@*/struct group *grent);
+extern void gr_free(/*@only@*/struct group *grent);
 
 /* hushed.c */
 extern bool hushed (const char *username);
@@ -213,9 +213,9 @@ extern void setup_limits (const struct passwd *);
 #endif
 
 /* list.c */
-extern /*@only@*/ /*@out@*/char **add_list (/*@returned@*/ /*@only@*/char **, const char *);
-extern /*@only@*/ /*@out@*/char **del_list (/*@returned@*/ /*@only@*/char **, const char *);
-extern /*@only@*/ /*@out@*/char **dup_list (char *const *);
+extern /*@only@*/char **add_list (/*@returned@*/ /*@only@*/char **, const char *);
+extern /*@only@*/char **del_list (/*@returned@*/ /*@only@*/char **, const char *);
+extern /*@only@*/char **dup_list (char *const *);
 extern bool is_on_list (char *const *list, const char *member);
 extern /*@only@*/char **comma_to_list (const char *);
 
@@ -354,7 +354,7 @@ extern /*@dependent@*/ /*@null@*/struct commonio_entry *__pw_get_head (void);
 
 /* pwmem.c */
 extern /*@null@*/ /*@only@*/struct passwd *__pw_dup (const struct passwd *pwent);
-extern void pw_free (/*@out@*/ /*@only@*/struct passwd *pwent);
+extern void pw_free(/*@only@*/struct passwd *pwent);
 
 /* csrand.c */
 unsigned long csrand (void);
@@ -417,7 +417,7 @@ extern struct spwd *sgetspent (const char *string);
 /* sgroupio.c */
 extern void __sgr_del_entry (const struct commonio_entry *ent);
 extern /*@null@*/ /*@only@*/struct sgrp *__sgr_dup (const struct sgrp *sgent);
-extern void sgr_free (/*@out@*/ /*@only@*/struct sgrp *sgent);
+extern void sgr_free(/*@only@*/struct sgrp *sgent);
 extern /*@dependent@*/ /*@null@*/struct commonio_entry *__sgr_get_head (void);
 extern void __sgr_set_changed (void);
 
@@ -427,14 +427,15 @@ extern void __spw_del_entry (const struct commonio_entry *ent);
 
 /* shadowmem.c */
 extern /*@null@*/ /*@only@*/struct spwd *__spw_dup (const struct spwd *spent);
-extern void spw_free (/*@out@*/ /*@only@*/struct spwd *spent);
+extern void spw_free(/*@only@*/struct spwd *spent);
 
 /* shell.c */
 extern int shell (const char *file, /*@null@*/const char *arg, char *const envp[]);
 
 /* spawn.c */
-extern int run_command (const char *cmd, const char *argv[],
-                        /*@null@*/const char *envp[], /*@out@*/int *status);
+ATTR_ACCESS(write_only, 4)
+extern int run_command(const char *cmd, const char *argv[],
+                       /*@null@*/const char *envp[], int *restrict status);
 
 /* strtoday.c */
 extern long strtoday (const char *);
