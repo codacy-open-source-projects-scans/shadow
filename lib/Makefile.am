@@ -20,6 +20,7 @@ endif
 
 libshadow_la_CPPFLAGS += -I$(top_srcdir)
 libshadow_la_CFLAGS = $(LIBBSD_CFLAGS) $(LIBCRYPT_PAM) $(LIBSYSTEMD)
+libshadow_la_LIBADD = $(LIBADD_DLOPEN)
 
 libshadow_la_SOURCES = \
 	addgrps.c \
@@ -30,11 +31,14 @@ libshadow_la_SOURCES = \
 	agetpass.h \
 	alloc.c \
 	alloc.h \
+	atoi/strtou_noneg.c \
+	atoi/strtou_noneg.h \
 	attr.h \
 	audit_help.c \
 	basename.c \
 	bit.c \
 	bit.h \
+	cast.h \
 	chkname.c \
 	chkname.h \
 	chowndir.c \
