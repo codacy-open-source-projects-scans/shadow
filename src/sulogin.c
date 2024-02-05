@@ -23,13 +23,11 @@
 #include "attr.h"
 #include "defines.h"
 #include "getdef.h"
-#include "memzero.h"
 #include "prototypes.h"
 #include "pwauth.h"
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
-#include "string/strtcpy.h"
 
 
 /*
@@ -39,7 +37,6 @@ const char *Prog;
 
 
 extern char **newenvp;
-extern size_t newenvc;
 
 #ifndef	ALARM
 #define	ALARM	60
@@ -47,10 +44,10 @@ extern size_t newenvc;
 
 
 static void catch_signals (int);
-static void pw_entry(const char *name, struct passwd *pwent);
+static int pw_entry(const char *name, struct passwd *pwent);
 
 
-static void catch_signals (unused int sig)
+static void catch_signals (MAYBE_UNUSED int sig)
 {
 	_exit (1);
 }
@@ -60,10 +57,10 @@ static void catch_signals (unused int sig)
 main(int argc, char **argv)
 {
 	int            err = 0;
-	char           pass[BUFSIZ];
 	char           **envp = environ;
 	TERMIO         termio;
 	struct passwd  pwent = {};
+	bool           done;
 #ifndef USE_PAM
 	const char     *env;
 #endif
@@ -133,15 +130,14 @@ main(int argc, char **argv)
 	(void) signal (SIGALRM, catch_signals);	/* exit if the timer expires */
 	(void) alarm (ALARM);		/* only wait so long ... */
 
-	while (true) {		/* repeatedly get login/password pairs */
-		char *cp;
-		pw_entry ("root", &pwent);	/* get entry from password file */
-		if (pwent.pw_name == NULL) {
+	do {			/* repeatedly get login/password pairs */
+		char *pass;
+		if (pw_entry("root", &pwent) == -1) {	/* get entry from password file */
 			/*
 			 * Fail secure
 			 */
-			(void) puts (_("No password entry for 'root'"));
-			exit (1);
+			(void) puts(_("No password entry for 'root'"));
+			exit(1);
 		}
 
 		/*
@@ -150,7 +146,7 @@ main(int argc, char **argv)
 		 */
 
 		/* get a password for root */
-		cp = agetpass (_(
+		pass = agetpass (_(
 "\n"
 "Type control-d to proceed with normal startup,\n"
 "(or give root password for system maintenance):"));
@@ -160,25 +156,24 @@ main(int argc, char **argv)
 		 * it will work with standard getpass() (no NULL on EOF).
 		 * --marekm
 		 */
-		if ((NULL == cp) || ('\0' == *cp)) {
-			erase_pass (cp);
+		if ((NULL == pass) || ('\0' == *pass)) {
+			erase_pass (pass);
 			(void) puts ("");
 #ifdef	TELINIT
 			execl (PATH_TELINIT, "telinit", RUNLEVEL, (char *) NULL);
 #endif
 			exit (0);
 		}
-		STRTCPY(pass, cp);
-		erase_pass (cp);
 
-		if (valid (pass, &pwent)) {	/* check encrypted passwords ... */
-			break;	/* ... encrypted passwords matched */
+		done = valid(pass, &pwent);
+		erase_pass (pass);
+
+		if (!done) {	/* check encrypted passwords ... */
+			/* ... encrypted passwords did not match */
+			sleep (2);
+			(void) puts (_("Login incorrect"));
 		}
-
-		sleep (2);
-		(void) puts (_("Login incorrect"));
-	}
-	MEMZERO(pass);
+	} while (!done);
 	(void) alarm (0);
 	(void) signal (SIGALRM, SIG_DFL);
 	environ = newenvp;	/* make new environment active */
@@ -192,17 +187,14 @@ main(int argc, char **argv)
 }
 
 
-static void
+static int
 pw_entry(const char *name, struct passwd *pwent)
 {
 	struct spwd    *spwd;
 	struct passwd  *passwd;
 
-	if (!(passwd = getpwnam(name))) {  /* local, no need for xgetpwnam */
-		free(pwent->pw_name);
-		pwent->pw_name = NULL;
-		return;
-	}
+	if (!(passwd = getpwnam(name)))  /* local, no need for xgetpwnam */
+		return -1;
 
 	free(pwent->pw_name);
 	pwent->pw_name = xstrdup(passwd->pw_name);
@@ -219,9 +211,10 @@ pw_entry(const char *name, struct passwd *pwent)
 	if ((spwd = getspnam(name))) {
 		free(pwent->pw_passwd);
 		pwent->pw_passwd = xstrdup(spwd->sp_pwdp);
-		return;
+		return 0;
 	}
 #endif
 	free(pwent->pw_passwd);
 	pwent->pw_passwd = xstrdup(passwd->pw_passwd);
+	return 0;
 }
