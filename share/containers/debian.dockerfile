@@ -9,15 +9,23 @@ RUN export DEBIAN_PRIORITY=critical \
 RUN apt-get update -y \
     && apt-get dist-upgrade -y
 RUN apt-get build-dep shadow -y
-RUN apt-get install libltdl-dev libbsd-dev libcmocka-dev pkgconf -y
+RUN apt-get install \
+	libltdl-dev \
+	libbsd-dev \
+	libcmocka-dev \
+	pkgconf \
+	-y
 
 COPY ./ /usr/local/src/shadow/
 WORKDIR /usr/local/src/shadow/
 
-RUN ./autogen.sh --without-selinux --enable-man --with-yescrypt
+RUN ./autogen.sh \
+	--without-selinux \
+	--enable-man \
+	--with-yescrypt
 RUN make -kj4 || true
 RUN make
-RUN make check
+RUN bash -c "trap 'cat <tests/unit/test-suite.log >&2' ERR; make check;"
 RUN make install
 
 FROM scratch AS export
