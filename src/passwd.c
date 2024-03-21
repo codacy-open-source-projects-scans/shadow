@@ -33,6 +33,8 @@
 #include "shadowio.h"
 #include "shadowlog.h"
 #include "string/strtcpy.h"
+#include "time/day_to_str.h"
+
 
 /*
  * exit status values
@@ -451,7 +453,7 @@ static void print_status (const struct passwd *pw)
 
 	sp = prefix_getspnam (pw->pw_name); /* local, no need for xprefix_getspnam */
 	if (NULL != sp) {
-		date_to_str (sizeof(date), date, sp->sp_lstchg * DAY),
+		DAY_TO_STR(date, sp->sp_lstchg);
 		(void) printf ("%s %s %s %ld %ld %ld %ld\n",
 		               pw->pw_name,
 		               pw_status (sp->sp_pwdp),
@@ -1000,8 +1002,8 @@ int main (int argc, char **argv)
 		                _("%s: You may not view or modify password information for %s.\n"),
 		                Prog, name);
 		SYSLOG ((LOG_WARN,
-		         "%s: can't view or modify password information for %s",
-		         Prog, name));
+		         "can't view or modify password information for %s",
+		         name));
 		closelog ();
 		exit (E_NOPERM);
 	}

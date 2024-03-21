@@ -59,6 +59,7 @@
 #endif
 #include "shadowlog.h"
 #include "string/sprintf.h"
+#include "time/day_to_str.h"
 
 
 /*
@@ -261,20 +262,6 @@ static int get_groups (char *list)
 		if (NULL == grp) {
 			continue;
 		}
-
-#ifdef	USE_NIS
-		/*
-		 * Don't add this group if they are an NIS group. Tell the
-		 * user to go to the server for this group.
-		 */
-		if (__isgrNIS ()) {
-			fprintf (stderr,
-			         _("%s: group '%s' is a NIS group.\n"),
-			         Prog, grp->gr_name);
-			gr_free (grp);
-			continue;
-		}
-#endif
 
 		if (ngroups == sys_ngroups) {
 			fprintf (stderr,
@@ -599,8 +586,9 @@ static void new_spent (struct spwd *spent)
 	if (eflg) {
 		/* log dates rather than numbers of days. */
 		char new_exp[16], old_exp[16];
-		date_to_str (sizeof(new_exp), new_exp, user_newexpire * DAY);
-		date_to_str (sizeof(old_exp), old_exp, user_expire * DAY);
+
+		DAY_TO_STR(new_exp, user_newexpire);
+		DAY_TO_STR(old_exp, user_expire);
 #ifdef WITH_AUDIT
 		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
 		              "changing expiration date",
@@ -1285,28 +1273,6 @@ static void process_flags (int argc, char **argv)
 		prefix_user_home = user_home;
 		prefix_user_newhome = user_newhome;
 	}
-
-#ifdef	USE_NIS
-	/*
-	 * Now make sure it isn't an NIS user.
-	 */
-	if (__ispwNIS ()) {
-		char *nis_domain;
-		char *nis_master;
-
-		fprintf (stderr,
-		         _("%s: user %s is a NIS user\n"),
-		         Prog, user_name);
-
-		if (   !yp_get_default_domain (&nis_domain)
-		    && !yp_master (nis_domain, "passwd.byname", &nis_master)) {
-			fprintf (stderr,
-			         _("%s: %s is the NIS master\n"),
-			         Prog, nis_master);
-		}
-		exit (E_NOTFOUND);
-	}
-#endif
 
 	{
 		const struct spwd *spwd = NULL;
