@@ -30,65 +30,47 @@ getrange(const char *range,
          unsigned long *min, bool *has_min,
          unsigned long *max, bool *has_max)
 {
-	char *endptr;
-	unsigned long n;
+	char  *end;
 
 	if (NULL == range)
 		return -1;
 
+	*has_min = false;
+	*has_max = false;
+
 	if ('-' == range[0]) {
-		if (!isdigit(range[1]))
-			return -1;
-
-		errno = 0;
-		n = strtoul_noneg(&range[1], &endptr, 10);
-		if (('\0' != *endptr) || (0 != errno))
-			return -1;
-
-		/* -<long> */
-		*has_min = false;
-		*has_max = true;
-		*max = n;
-	} else {
-		errno = 0;
-		n = strtoul_noneg(range, &endptr, 10);
-		if (endptr == range || 0 != errno)
-			return -1;
-
-		switch (*endptr) {
-		case '\0':
-			/* <long> */
-			*has_min = true;
-			*has_max = true;
-			*min = n;
-			*max = n;
-			break;
-		case '-':
-			endptr++;
-			if ('\0' == *endptr) {
-				/* <long>- */
-				*has_min = true;
-				*has_max = false;
-				*min = n;
-			} else if (!isdigit (*endptr)) {
-				return -1;
-			} else {
-				*has_min = true;
-				*min = n;
-				errno = 0;
-				n = strtoul_noneg(endptr, &endptr, 10);
-				if ('\0' != *endptr || 0 != errno)
-					return -1;
-
-				/* <long>-<long> */
-				*has_max = true;
-				*max = n;
-			}
-			break;
-		default:
-			return -1;
-		}
+		end = range + 1;
+		goto parse_max;
 	}
 
-	return 0;
+	errno = 0;
+	*min = strtoul_noneg(range, &end, 10);
+	if (end == range || 0 != errno)
+		return -1;
+	*has_min = true;
+
+	switch (*end++) {
+	case '\0':
+		*has_max = true;
+		*max = *min;
+		return 0;  /* <long> */
+
+	case '-':
+		if ('\0' == *end)
+			return 0;  /* <long>- */
+parse_max:
+		if (!isdigit(*end))
+			return -1;
+
+		errno = 0;
+		*max = strtoul_noneg(end, &end, 10);
+		if ('\0' != *end || 0 != errno)
+			return -1;
+		*has_max = true;
+
+		return 0;  /* <long>-<long>, or -<long> */
+
+	default:
+		return -1;
+	}
 }
