@@ -1,12 +1,12 @@
 dnl Process this file with autoconf to produce a configure script.
 AC_PREREQ([2.69])
-m4_define([libsubid_abi_major], 4)
+m4_define([libsubid_abi_major], 5)
 m4_define([libsubid_abi_minor], 0)
 m4_define([libsubid_abi_micro], 0)
 m4_define([libsubid_abi], [libsubid_abi_major.libsubid_abi_minor.libsubid_abi_micro])
-AC_INIT([shadow], [4.15.1], [pkg-shadow-devel@lists.alioth.debian.org], [],
+AC_INIT([shadow], [4.16.0], [pkg-shadow-devel@lists.alioth.debian.org], [],
 	[https://github.com/shadow-maint/shadow])
-AM_INIT_AUTOMAKE([1.11 foreign dist-xz subdir-objects])
+AM_INIT_AUTOMAKE([1.11 foreign dist-xz subdir-objects tar-pax])
 AC_CONFIG_MACRO_DIRS([m4])
 AM_SILENT_RULES([yes])
 AC_CONFIG_HEADERS([config.h])
@@ -158,13 +158,6 @@ else
 fi])
 AC_DEFINE_UNQUOTED(PASSWD_PROGRAM, "$shadow_cv_passwd_dir/passwd",
 	[Path to passwd program.])
-
-dnl XXX - quick hack, should disappear before anyone notices :).
-dnl XXX - I just read the above message :).
-if test "$ac_cv_func_ruserok" = "yes"; then
-	AC_DEFINE(RLOGIN, 1, [Define if login should support the -r flag for rlogind.])
-	AC_DEFINE(RUSEROK, 0, [Define to the ruserok() "success" return value (0 or 1).])
-fi
 
 AC_ARG_ENABLE(shadowgrp,
 	[AS_HELP_STRING([--enable-shadowgrp], [enable shadow group support @<:@default=yes@:>@])],
