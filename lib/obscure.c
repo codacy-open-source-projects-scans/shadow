@@ -15,12 +15,14 @@
 #include <ctype.h>
 #include <stdio.h>
 
-#include "alloc.h"
 #include "attr.h"
 #include "memzero.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "getdef.h"
+#include "string/sprintf/xasprintf.h"
+#include "string/strdup/xstrdup.h"
+
 
 #if WITH_LIBBSD == 0
 #include "freezero.h"
@@ -99,9 +101,7 @@ static /*@observer@*//*@null@*/const char *password_check (
 
 	newmono = str_lower (xstrdup (new));
 	oldmono = str_lower (xstrdup (old));
-	wrapped = XMALLOC(strlen(oldmono) * 2 + 1, char);
-	strcpy (wrapped, oldmono);
-	strcat (wrapped, oldmono);
+	xasprintf(&wrapped, "%s%s", oldmono, oldmono);
 
 	if (palindrome (oldmono, newmono)) {
 		msg = _("a palindrome");
@@ -189,12 +189,10 @@ static /*@observer@*//*@null@*/const char *obscure_msg (
 
 	new1 = xstrdup (new);
 	old1 = xstrdup (old);
-	if (newlen > maxlen) {
-		new1[maxlen] = '\0';
-	}
-	if (oldlen > maxlen) {
-		old1[maxlen] = '\0';
-	}
+	if (newlen > maxlen)
+		stpcpy(&new1[maxlen], "");
+	if (oldlen > maxlen)
+		stpcpy(&old1[maxlen], "");
 
 	msg = password_check (old1, new1, pwdp);
 

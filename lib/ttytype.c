@@ -12,9 +12,14 @@
 #ident "$Id$"
 
 #include <stdio.h>
-#include "prototypes.h"
+#include <string.h>
+
 #include "defines.h"
 #include "getdef.h"
+#include "prototypes.h"
+#include "string/strtok/stpsep.h"
+
+
 /*
  * ttytype - set ttytype from port to terminal type mapping database
  */
@@ -23,7 +28,6 @@ void ttytype (const char *line)
 	FILE *fp;
 	char buf[BUFSIZ];
 	const char *typefile;
-	char *cp;
 	char type[1024] = "";
 	char port[1024];
 
@@ -46,10 +50,7 @@ void ttytype (const char *line)
 			continue;
 		}
 
-		cp = strchr (buf, '\n');
-		if (NULL != cp) {
-			*cp = '\0';
-		}
+		stpsep(buf, "\n");
 
 		if (   (sscanf (buf, "%1023s %1023s", type, port) == 2)
 		    && (strcmp (line, port) == 0)) {

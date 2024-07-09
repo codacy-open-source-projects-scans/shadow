@@ -17,9 +17,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "alloc.h"
-#include "prototypes.h"
+#include "alloc/malloc.h"
+#include "alloc/realloc.h"
+#include "alloc/x/xrealloc.h"
 #include "defines.h"
+#include "prototypes.h"
+#include "string/strtok/stpsep.h"
+
 
 static /*@null@*/FILE *shadow;
 static /*@null@*//*@only@*/char **members = NULL;
@@ -37,21 +41,17 @@ static /*@null@*/char **build_list (char *s, char **list[], size_t * nlist)
 	size_t nelem = *nlist, size;
 
 	while (s != NULL && *s != '\0') {
-		size = (nelem + 1) * sizeof (ptr);
-		ptr = REALLOC(*list, size, char *);
-		if (NULL != ptr) {
-			ptr[nelem] = strsep(&s, ",");
-			nelem++;
-			*list = ptr;
-			*nlist = nelem;
-		}
-	}
-	size = (nelem + 1) * sizeof (ptr);
-	ptr = REALLOC(*list, size, char *);
-	if (NULL != ptr) {
-		ptr[nelem] = NULL;
+		ptr = XREALLOC(*list, nelem + 1, char *);
+		ptr[nelem] = strsep(&s, ",");
+		nelem++;
 		*list = ptr;
+		*nlist = nelem;
 	}
+
+	ptr = XREALLOC(*list, nelem + 1, char *);
+	ptr[nelem] = NULL;
+	*list = ptr;
+
 	return ptr;
 }
 
@@ -93,11 +93,7 @@ void endsgent (void)
 	}
 
 	strcpy (sgrbuf, string);
-
-	cp = strrchr (sgrbuf, '\n');
-	if (NULL != cp) {
-		*cp = '\0';
-	}
+	stpsep(sgrbuf, "\n");
 
 	/*
 	 * There should be exactly 4 colon separated fields.  Find
@@ -178,10 +174,7 @@ void endsgent (void)
 				return NULL;
 			}
 		}
-		cp = strrchr (buf, '\n');
-		if (NULL != cp) {
-			*cp = '\0';
-		}
+		stpsep(buf, "\n");
 		return (sgetsgent (buf));
 	}
 	return NULL;
@@ -253,53 +246,36 @@ int putsgent (const struct sgrp *sgrp, FILE * fp)
 	/*
 	 * Copy the group name and passwd.
 	 */
-
-	strcpy (cp, sgrp->sg_name);
-	cp += strlen (cp);
-	*cp++ = ':';
-
-	strcpy (cp, sgrp->sg_passwd);
-	cp += strlen (cp);
-	*cp++ = ':';
+	cp = stpcpy(stpcpy(cp, sgrp->sg_name), ":");
+	cp = stpcpy(stpcpy(cp, sgrp->sg_passwd), ":");
 
 	/*
 	 * Copy the administrators, separating each from the other
 	 * with a ",".
 	 */
-
 	for (i = 0; NULL != sgrp->sg_adm[i]; i++) {
-		if (i > 0) {
-			*cp++ = ',';
-		}
+		if (i > 0)
+			cp = stpcpy(cp, ",");
 
-		strcpy (cp, sgrp->sg_adm[i]);
-		cp += strlen (cp);
+		cp = stpcpy(cp, sgrp->sg_adm[i]);
 	}
-	*cp = ':';
-	cp++;
+	cp = stpcpy(cp, ":");
 
 	/*
 	 * Now do likewise with the group members.
 	 */
-
 	for (i = 0; NULL != sgrp->sg_mem[i]; i++) {
-		if (i > 0) {
-			*cp = ',';
-			cp++;
-		}
+		if (i > 0)
+			cp = stpcpy(cp, ",");
 
-		strcpy (cp, sgrp->sg_mem[i]);
-		cp += strlen (cp);
+		cp = stpcpy(cp, sgrp->sg_mem[i]);
 	}
-	*cp = '\n';
-	cp++;
-	*cp = '\0';
+	stpcpy(cp, "\n");
 
 	/*
 	 * Output using the function which understands the line
 	 * continuation conventions.
 	 */
-
 	if (fputsx (buf, fp) == EOF) {
 		free (buf);
 		return -1;

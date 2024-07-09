@@ -25,7 +25,7 @@
 #include <sys/ioctl.h>
 #include <assert.h>
 
-#include "alloc.h"
+#include "alloc/x/xmalloc.h"
 #include "attr.h"
 #include "chkname.h"
 #include "defines.h"
@@ -38,9 +38,10 @@
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
-#include "string/sprintf.h"
+#include "string/sprintf/snprintf.h"
+#include "string/strcpy/strtcpy.h"
+#include "string/strdup/xstrdup.h"
 #include "string/strftime.h"
-#include "string/strtcpy.h"
 
 
 #ifdef USE_PAM
@@ -834,7 +835,6 @@ int main (int argc, char **argv)
 			}
 			preauth_flag = false;
 			username = XMALLOC(max_size, char);
-			username[max_size - 1] = '\0';
 			login_prompt(username, max_size);
 
 			if ('\0' == username[0]) {

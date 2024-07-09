@@ -32,8 +32,10 @@
 #include <sys/types.h>
 #include <time.h>
 
-#include "alloc.h"
-#include "atoi/str2i.h"
+#include "alloc/malloc.h"
+#include "alloc/x/xmalloc.h"
+#include "atoi/a2i.h"
+#include "atoi/getnum.h"
 #include "chkname.h"
 #include "defines.h"
 #include "faillog.h"
@@ -59,7 +61,8 @@
 #include "tcbfuncs.h"
 #endif
 #include "shadowlog.h"
-#include "string/sprintf.h"
+#include "string/sprintf/xasprintf.h"
+#include "string/strdup/xstrdup.h"
 #include "time/day_to_str.h"
 
 
@@ -212,7 +215,6 @@ extern int allow_bad_names;
  */
 static int get_groups (char *list)
 {
-	char *cp;
 	struct group *grp;
 	int errors = 0;
 	int ngroups = 0;
@@ -232,20 +234,18 @@ static int get_groups (char *list)
 	 * group identifiers is permitted.
 	 */
 	do {
+		char  *g;
+
 		/*
 		 * Strip off a single name from the list
 		 */
-		cp = strchr (list, ',');
-		if (NULL != cp) {
-			*cp = '\0';
-			cp++;
-		}
+		g = strsep(&list, ",");
 
 		/*
 		 * Names starting with digits are treated as numerical GID
 		 * values, otherwise the string is looked up as is.
 		 */
-		grp = prefix_getgr_nam_gid (list);
+		grp = prefix_getgr_nam_gid(g);
 
 		/*
 		 * There must be a match, either by GID value or by
@@ -253,10 +253,9 @@ static int get_groups (char *list)
 		 */
 		if (NULL == grp) {
 			fprintf (stderr, _("%s: group '%s' does not exist\n"),
-			         Prog, list);
+			         Prog, g);
 			errors++;
 		}
-		list = cp;
 
 		/*
 		 * If the group doesn't exist, don't dump core. Instead,
@@ -302,35 +301,25 @@ struct ulong_range
 
 static struct ulong_range getulong_range(const char *str)
 {
-	struct ulong_range result = { .first = ULONG_MAX, .last = 0 };
-	long long first, last;
-	char *pos;
-
-	errno = 0;
-	first = strtoll(str, &pos, 10);
-	if (('\0' == *str) || ('-' != *pos ) || (0 != errno) ||
-	    (first != (unsigned long)first))
-		goto out;
-
-	errno = 0;
-	last = strtoll(pos + 1, &pos, 10);
-	if (('\0' != *pos ) || (0 != errno) ||
-	    (last != (unsigned long)last))
-		goto out;
-
-	if (first > last)
-		goto out;
+	const char          *pos;
+	unsigned long       first, last;
+	struct ulong_range  result = { .first = ULONG_MAX, .last = 0 };
 
 	/*
 	 * uid_t in linux is an unsigned int, anything over this is an invalid
 	 * range will be later refused anyway by get_map_ranges().
 	 */
-	if (first > UINT_MAX || last > UINT_MAX)
-		goto out;
+	if (a2ul(&first, str, &pos, 10, 0, UINT_MAX) == -1 && errno != ENOTSUP)
+		return result;
 
-	result.first = (unsigned long)first;
-	result.last = (unsigned long)last;
-out:
+	if ('-' != *pos++)
+		return result;
+
+	if (a2ul(&last, pos, NULL, 10, first, UINT_MAX) == -1)
+		return result;
+
+	result.first = first;
+	result.last = last;
 	return result;
 }
 
@@ -424,15 +413,14 @@ usage (int status)
 static char *new_pw_passwd (char *pw_pass)
 {
 	if (Lflg && ('!' != pw_pass[0])) {
-		char *buf = XMALLOC(strlen(pw_pass) + 2, char);
+		char  *buf;
 
 #ifdef WITH_AUDIT
 		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
 		              "updating passwd", user_newname, user_newid, 0);
 #endif
 		SYSLOG ((LOG_INFO, "lock user '%s' password", user_newname));
-		strcpy (buf, "!");
-		strcat (buf, pw_pass);
+		xasprintf(&buf, "!%s", pw_pass);
 		pw_pass = buf;
 	} else if (Uflg && pw_pass[0] == '!') {
 		if (pw_pass[1] == '\0') {
@@ -981,7 +969,8 @@ static void grp_update (void)
  *	values that the user will be created with accordingly. The values
  *	are checked for sanity.
  */
-static void process_flags (int argc, char **argv)
+static void
+process_flags(int argc, char **argv)
 {
 	struct stat st;
 	bool anyflag = false;
@@ -1078,8 +1067,9 @@ static void process_flags (int argc, char **argv)
 				eflg = true;
 				break;
 			case 'f':
-				if (   (str2sl(&user_newinactive, optarg) == -1)
-				    || (user_newinactive < -1)) {
+				if (a2sl(&user_newinactive, optarg, NULL, 0, -1, LONG_MAX)
+				    == -1)
+				{
 					fprintf (stderr,
 					         _("%s: invalid numeric argument '%s'\n"),
 					         Prog, optarg);

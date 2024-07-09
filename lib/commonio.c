@@ -11,28 +11,32 @@
 
 #ident "$Id$"
 
-#include "defines.h"
 #include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <stdlib.h>
-#include <limits.h>
 #include <utime.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <stdio.h>
-#include <signal.h>
 
-#include "alloc.h"
+#include "alloc/malloc.h"
+#include "alloc/reallocf.h"
+#include "atoi/getnum.h"
+#include "commonio.h"
+#include "defines.h"
 #include "memzero.h"
 #include "nscd.h"
-#include "sssd.h"
 #ifdef WITH_TCB
 #include <tcb.h>
 #endif				/* WITH_TCB */
 #include "prototypes.h"
-#include "commonio.h"
 #include "shadowlog_internal.h"
-#include "string/sprintf.h"
+#include "sssd.h"
+#include "string/sprintf/snprintf.h"
+#include "string/strtok/stpsep.h"
 
 
 /* local function prototypes */
@@ -194,7 +198,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		errno = EINVAL;
 		return 0;
 	}
-	buf[len] = '\0';
+	stpcpy(&buf[len], "");
 	if (get_pid(buf, &pid) == -1) {
 		if (log) {
 			(void) fprintf (shadow_logfd,
@@ -573,9 +577,7 @@ static void add_one_entry_nis (struct commonio_db *db,
 int commonio_open (struct commonio_db *db, int mode)
 {
 	char *buf;
-	char *cp;
 	char *line;
-	struct commonio_entry *p;
 	void *eptr = NULL;
 	int flags = mode;
 	size_t buflen;
@@ -636,21 +638,21 @@ int commonio_open (struct commonio_db *db, int mode)
 
 	buflen = BUFLEN;
 	buf = MALLOC(buflen, char);
-	if (NULL == buf) {
-		goto cleanup_ENOMEM;
-	}
+	if (NULL == buf)
+		goto cleanup_errno;
 
 	while (db->ops->fgets (buf, buflen, db->fp) == buf) {
+		struct commonio_entry  *p;
+
 		while (   (strrchr (buf, '\n') == NULL)
 		       && (feof (db->fp) == 0)) {
 			size_t len;
 
 			buflen += BUFLEN;
-			cp = REALLOC(buf, buflen, char);
-			if (NULL == cp) {
-				goto cleanup_buf;
-			}
-			buf = cp;
+			buf = REALLOCF(buf, buflen, char);
+			if (NULL == buf)
+				goto cleanup_errno;
+
 			len = strlen (buf);
 			if (db->ops->fgets (buf + len,
 			                    (int) (buflen - len),
@@ -658,10 +660,7 @@ int commonio_open (struct commonio_db *db, int mode)
 				goto cleanup_buf;
 			}
 		}
-		cp = strrchr (buf, '\n');
-		if (NULL != cp) {
-			*cp = '\0';
-		}
+		stpsep(buf, "\n");
 
 		line = strdup (buf);
 		if (NULL == line) {
@@ -713,7 +712,6 @@ int commonio_open (struct commonio_db *db, int mode)
 	free (line);
       cleanup_buf:
 	free (buf);
-      cleanup_ENOMEM:
 	errno = ENOMEM;
       cleanup_errno:
 	saved_errno = errno;

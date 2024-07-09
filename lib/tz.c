@@ -16,9 +16,12 @@
 
 #include <stdio.h>
 #include <string.h>
+
 #include "defines.h"
-#include "prototypes.h"
 #include "getdef.h"
+#include "prototypes.h"
+#include "string/strtok/stpsep.h"
+
 
 /*
  * tz - return local timezone name
@@ -42,8 +45,7 @@
 
 		strcpy (tzbuf, def_tz);
 	} else {
-		/* Remove optional trailing '\n'. */
-		tzbuf[strcspn (tzbuf, "\n")] = '\0';
+		stpsep(tzbuf, "\n");
 	}
 
 	if (NULL != fp) {

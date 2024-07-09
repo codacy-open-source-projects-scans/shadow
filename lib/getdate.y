@@ -646,7 +646,7 @@ static int LookupWord (char *buff)
   else if (strlen (buff) == 4 && buff[3] == '.')
     {
       abbrev = true;
-      buff[3] = '\0';
+      stpcpy(&buff[3], "");
     }
   else
     abbrev = false;
@@ -689,7 +689,7 @@ static int LookupWord (char *buff)
   i = strlen (buff) - 1;
   if (buff[i] == 's')
     {
-      buff[i] = '\0';
+      stpcpy(&buff[i], "");
       for (tp = UnitsTable; tp->name; tp++)
 	if (strcmp (buff, tp->name) == 0)
 	  {
@@ -723,7 +723,7 @@ static int LookupWord (char *buff)
       *p++ = *q;
     else
       i++;
-  *p = '\0';
+  stpcpy(p, "");
   if (0 != i)
     for (tp = TimezoneTable; NULL != tp->name; tp++)
       if (strcmp (buff, tp->name) == 0)
@@ -772,7 +772,7 @@ yylex (void)
 	  for (p = buff; (c = *yyInput++, isalpha (c)) || c == '.';)
 	    if (p < &buff[sizeof buff - 1])
 	      *p++ = c;
-	  *p = '\0';
+          stpcpy(p, "");
 	  yyInput--;
 	  return LookupWord (buff);
 	}
@@ -821,7 +821,7 @@ time_t get_date (const char *p, const time_t *now)
   time_t Start;
 
   yyInput = p;
-  Start = now ? *now : time ((time_t *) NULL);
+  Start = now ? *now : time(NULL);
   tmp = localtime (&Start);
   yyYear = tmp->tm_year + TM_YEAR_ORIGIN;
   yyMonth = tmp->tm_mon + 1;
@@ -935,7 +935,7 @@ main(void)
   buff[MAX_BUFF_LEN] = 0;
   while (fgets (buff, MAX_BUFF_LEN, stdin) && buff[0])
     {
-      d = get_date (buff, (time_t *) NULL);
+      d = get_date(buff, NULL);
       if (d == -1)
 	(void) printf ("Bad format - couldn't convert.\n");
       else

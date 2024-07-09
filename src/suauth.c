@@ -8,13 +8,19 @@
  */
 
 #include <config.h>
+
 #include <errno.h>
 #include <grp.h>
 #include <pwd.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
+
 #include "defines.h"
 #include "prototypes.h"
+#include "string/strchr/strrspn.h"
+#include "string/strtok/stpsep.h"
+
 
 #ifndef SUAUTHFILE
 #define SUAUTHFILE "/etc/suauth"
@@ -41,7 +47,7 @@ int check_su_auth (const char *actual_id,
                    const char *wanted_id,
                    bool su_to_root)
 {
-	int posn, endline;
+	int posn;
 	const char field[] = ":";
 	FILE *authfile_fd;
 	char temp[1024];
@@ -68,27 +74,21 @@ int check_su_auth (const char *actual_id,
 
 	while (fgets (temp, sizeof (temp), authfile_fd) != NULL) {
 		lines++;
-		endline = strlen(temp) - 1;
 
-		if (temp[0] == '\0' || temp[endline] != '\n') {
+		if (stpsep(temp, "\n") == NULL) {
 			SYSLOG ((LOG_ERR,
 				 "%s, line %d: line too long or missing newline",
 				 SUAUTHFILE, lines));
 			continue;
 		}
 
-		while (endline > 0 && (temp[endline - 1] == ' '
-				       || temp[endline - 1] == '\t'
-				       || temp[endline - 1] == '\n'))
-			endline--;
-		temp[endline] = '\0';
+		stpcpy(strrspn(temp, " \t"), "");
 
 		posn = 0;
 		while (temp[posn] == ' ' || temp[posn] == '\t')
 			posn++;
 
-		if (temp[posn] == '\n' || temp[posn] == '#'
-		    || temp[posn] == '\0') {
+		if (temp[posn] == '#' || temp[posn] == '\0') {
 			continue;
 		}
 		if (!(to_users = strtok (temp + posn, field))

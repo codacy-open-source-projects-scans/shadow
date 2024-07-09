@@ -17,8 +17,10 @@
 #include <sys/time.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <string.h>
 
-#include "alloc.h"
+#include "alloc/malloc.h"
+#include "alloc/x/xmalloc.h"
 #include "attr.h"
 #include "prototypes.h"
 #include "defines.h"
@@ -36,7 +38,7 @@
 #include <attr/libattr.h>
 #endif				/* WITH_ATTR */
 #include "shadowlog.h"
-#include "string/sprintf.h"
+#include "string/sprintf/xasprintf.h"
 
 
 static /*@null@*/const char *src_orig;
@@ -562,7 +564,7 @@ static /*@null@*/char *readlink_malloc (const char *filename)
 
 		if ((size_t) nchars < size) { /* The buffer was large enough */
 			/* readlink does not nul-terminate */
-			buffer[nchars] = '\0';
+			stpcpy(&buffer[nchars], "");
 			return buffer;
 		}
 

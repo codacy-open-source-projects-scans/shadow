@@ -15,12 +15,13 @@
 #include <stdio.h>
 #include <signal.h>
 
-#include "alloc.h"
 #include "attr.h"
-#include "memzero.h"
-#include "prototypes.h"
 #include "defines.h"
 #include "getdef.h"
+#include "memzero.h"
+#include "prototypes.h"
+#include "string/strtok/stpsep.h"
+
 
 static void login_exit (MAYBE_UNUSED int sig)
 {
@@ -84,11 +85,8 @@ void login_prompt (char *name, int namesize)
 		exit (EXIT_FAILURE);
 	}
 
-	cp = strchr (buf, '\n');
-	if (NULL == cp) {
-		exit (EXIT_FAILURE);
-	}
-	*cp = '\0';		/* remove \n [ must be there ] */
+	if (stpsep(buf, "\n") == NULL)
+		exit(EXIT_FAILURE);
 
 	/*
 	 * Skip leading whitespace.  This makes "  username" work right.
@@ -99,7 +97,7 @@ void login_prompt (char *name, int namesize)
 
 	for (i = 0; i < namesize - 1 && *cp != '\0'; name[i++] = *cp++);
 
-	name[i] = '\0';
+	stpcpy(&name[i], "");
 
 	/*
 	 * Set the SIGQUIT handler back to its original value

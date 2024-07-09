@@ -26,7 +26,8 @@
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
 
-#include "alloc.h"
+#include "alloc/x/xmalloc.h"
+#include "atoi/getnum.h"
 #include "chkname.h"
 #include "defines.h"
 #include "groupio.h"
@@ -38,8 +39,11 @@
 #include "sgroupio.h"
 #endif
 #include "shadowlog.h"
-#include "string/stpecpy.h"
-#include "string/stpeprintf.h"
+#include "string/sprintf/stpeprintf.h"
+#include "string/strcpy/stpecpy.h"
+#include "string/strdup/xstrdup.h"
+
+
 /*
  * exit status values
  */
