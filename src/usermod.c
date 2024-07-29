@@ -34,7 +34,8 @@
 
 #include "alloc/malloc.h"
 #include "alloc/x/xmalloc.h"
-#include "atoi/a2i.h"
+#include "atoi/a2i/a2i.h"
+#include "atoi/a2i/a2s.h"
 #include "atoi/getnum.h"
 #include "chkname.h"
 #include "defines.h"
@@ -42,6 +43,7 @@
 #include "getdef.h"
 #include "groupio.h"
 #include "memzero.h"
+#include "must_be.h"
 #include "nscd.h"
 #include "sssd.h"
 #include "prototypes.h"
@@ -293,29 +295,38 @@ static int get_groups (char *list)
 }
 
 #ifdef ENABLE_SUBIDS
-struct ulong_range
+struct id_range
 {
-	unsigned long first;
-	unsigned long last;
+	id_t  first;
+	id_t  last;
 };
 
-static struct ulong_range getulong_range(const char *str)
+static struct id_range
+getid_range(const char *str)
 {
-	const char          *pos;
-	unsigned long       first, last;
-	struct ulong_range  result = { .first = ULONG_MAX, .last = 0 };
+	id_t             first, last;
+	const char       *pos;
+	struct id_range  result = {
+		.first = type_max(id_t),
+		.last = type_min(id_t)
+	};
 
-	/*
-	 * uid_t in linux is an unsigned int, anything over this is an invalid
-	 * range will be later refused anyway by get_map_ranges().
-	 */
-	if (a2ul(&first, str, &pos, 10, 0, UINT_MAX) == -1 && errno != ENOTSUP)
+	static_assert(is_same_type(id_t, uid_t), "");
+	static_assert(is_same_type(id_t, gid_t), "");
+
+	first = type_min(id_t);
+	last = type_max(id_t);
+
+	if (a2i(id_t, &first, str, &pos, 10, first, last) == -1
+	    && errno != ENOTSUP)
+	{
 		return result;
+	}
 
 	if ('-' != *pos++)
 		return result;
 
-	if (a2ul(&last, pos, NULL, 10, first, UINT_MAX) == -1)
+	if (a2i(id_t, &last, pos, NULL, 10, first, last) == -1)
 		return result;
 
 	result.first = first;
@@ -323,23 +334,25 @@ static struct ulong_range getulong_range(const char *str)
 	return result;
 }
 
-struct ulong_range_list_entry {
-	struct ulong_range_list_entry *next;
-	struct ulong_range range;
+struct id_range_list_entry {
+	struct id_range_list_entry  *next;
+	struct id_range             range;
 };
 
-static struct ulong_range_list_entry *add_sub_uids = NULL, *del_sub_uids = NULL;
-static struct ulong_range_list_entry *add_sub_gids = NULL, *del_sub_gids = NULL;
+static struct id_range_list_entry  *add_sub_uids = NULL, *del_sub_uids = NULL;
+static struct id_range_list_entry  *add_sub_gids = NULL, *del_sub_gids = NULL;
 
-static int prepend_range(const char *str, struct ulong_range_list_entry **head)
+static int
+prepend_range(const char *str, struct id_range_list_entry **head)
 {
-	struct ulong_range range;
-	struct ulong_range_list_entry *entry;
-	range = getulong_range(str);
+	struct id_range             range;
+	struct id_range_list_entry  *entry;
+
+	range = getid_range(str);
 	if (range.first > range.last)
 		return 0;
 
-	entry = MALLOC(1, struct ulong_range_list_entry);
+	entry = MALLOC(1, struct id_range_list_entry);
 	if (!entry) {
 		fprintf (stderr,
 			_("%s: failed to allocate memory: %s\n"),
@@ -2231,53 +2244,69 @@ int main (int argc, char **argv)
 	}
 #ifdef ENABLE_SUBIDS
 	if (Vflg) {
-		struct ulong_range_list_entry *ptr;
+		struct id_range_list_entry  *ptr;
+
 		for (ptr = del_sub_uids; ptr != NULL; ptr = ptr->next) {
-			unsigned long count = ptr->range.last - ptr->range.first + 1;
+			id_t  count = ptr->range.last - ptr->range.first + 1;
+
 			if (sub_uid_remove(user_name, ptr->range.first, count) == 0) {
-				fprintf (stderr,
-					_("%s: failed to remove uid range %lu-%lu from '%s'\n"),
-					Prog, ptr->range.first, ptr->range.last,
-					sub_uid_dbname ());
+				fprintf(stderr,
+				        _("%s: failed to remove uid range %ju-%ju from '%s'\n"),
+				        Prog,
+				        (uintmax_t) ptr->range.first,
+				        (uintmax_t) ptr->range.last,
+				        sub_uid_dbname());
 				fail_exit (E_SUB_UID_UPDATE);
 			}
 		}
 	}
 	if (vflg) {
-		struct ulong_range_list_entry *ptr;
+		struct id_range_list_entry  *ptr;
+
 		for (ptr = add_sub_uids; ptr != NULL; ptr = ptr->next) {
-			unsigned long count = ptr->range.last - ptr->range.first + 1;
+			id_t  count = ptr->range.last - ptr->range.first + 1;
+
 			if (sub_uid_add(user_name, ptr->range.first, count) == 0) {
-				fprintf (stderr,
-					_("%s: failed to add uid range %lu-%lu to '%s'\n"),
-					Prog, ptr->range.first, ptr->range.last,
-					sub_uid_dbname ());
+				fprintf(stderr,
+				        _("%s: failed to add uid range %ju-%ju to '%s'\n"),
+				        Prog,
+				        (uintmax_t) ptr->range.first,
+				        (uintmax_t) ptr->range.last,
+				        sub_uid_dbname());
 				fail_exit (E_SUB_UID_UPDATE);
 			}
 		}
 	}
 	if (Wflg) {
-		struct ulong_range_list_entry *ptr;
+		struct id_range_list_entry  *ptr;
+
 		for (ptr = del_sub_gids; ptr != NULL; ptr = ptr->next) {
-			unsigned long count = ptr->range.last - ptr->range.first + 1;
+			id_t  count = ptr->range.last - ptr->range.first + 1;
+
 			if (sub_gid_remove(user_name, ptr->range.first, count) == 0) {
-				fprintf (stderr,
-					_("%s: failed to remove gid range %lu-%lu from '%s'\n"),
-					Prog, ptr->range.first, ptr->range.last,
-					sub_gid_dbname ());
+				fprintf(stderr,
+				        _("%s: failed to remove gid range %ju-%ju from '%s'\n"),
+				        Prog,
+				        (uintmax_t) ptr->range.first,
+				        (uintmax_t) ptr->range.last,
+				        sub_gid_dbname());
 				fail_exit (E_SUB_GID_UPDATE);
 			}
 		}
 	}
 	if (wflg) {
-		struct ulong_range_list_entry *ptr;
+		struct id_range_list_entry  *ptr;
+
 		for (ptr = add_sub_gids; ptr != NULL; ptr = ptr->next) {
-			unsigned long count = ptr->range.last - ptr->range.first + 1;
+			id_t  count = ptr->range.last - ptr->range.first + 1;
+
 			if (sub_gid_add(user_name, ptr->range.first, count) == 0) {
-				fprintf (stderr,
-					_("%s: failed to add gid range %lu-%lu to '%s'\n"),
-					Prog, ptr->range.first, ptr->range.last,
-					sub_gid_dbname ());
+				fprintf(stderr,
+				        _("%s: failed to add gid range %ju-%ju to '%s'\n"),
+				        Prog,
+				        (uintmax_t) ptr->range.first,
+				        (uintmax_t) ptr->range.last,
+				        sub_gid_dbname());
 				fail_exit (E_SUB_GID_UPDATE);
 			}
 		}

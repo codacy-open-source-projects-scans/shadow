@@ -30,8 +30,11 @@
 #include "shadowlog.h"
 #include <sys/resource.h>
 
-#include "atoi/a2i.h"
-#include "atoi/str2i.h"
+#include "atoi/a2i/a2i.h"
+#include "atoi/a2i/a2s.h"
+#include "atoi/str2i/str2i.h"
+#include "atoi/str2i/str2s.h"
+#include "atoi/str2i/str2u.h"
 #include "memzero.h"
 #include "typetraits.h"
 
@@ -118,6 +121,10 @@ static int check_logins (const char *name, const char *maxlogins)
 	unsigned long limit, count;
 
 	if (str2ul(&limit, maxlogins) == -1) {
+		if (errno == ERANGE) {
+			SYSLOG((LOG_WARN, "Invalid maxlogins value\n"));
+			return LOGIN_ERROR_LOGIN;
+		}
 		return 0;
 	}
 
