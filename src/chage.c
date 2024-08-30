@@ -243,11 +243,15 @@ print_day_as_date(long day)
 	}
 
 	if (localtime_r(&date, &tm) == NULL) {
-		(void) printf ("time_t: %lu\n", (unsigned long)date);
+		puts(_("future"));
 		return;
 	}
 
-	STRFTIME(buf, iflg ? "%Y-%m-%d" : "%b %d, %Y", &tm);
+	if (STRFTIME(buf, iflg ? "%F" : "%b %d, %Y", &tm) == 0) {
+		puts(_("future"));
+		return;
+	}
+
 	(void) puts (buf);
 }
 
