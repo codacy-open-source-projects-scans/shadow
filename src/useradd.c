@@ -44,7 +44,6 @@
 #include "faillog.h"
 #include "getdef.h"
 #include "groupio.h"
-#include "memzero.h"
 #include "nscd.h"
 #include "sssd.h"
 #include "prototypes.h"
@@ -65,6 +64,7 @@
 #include "tcbfuncs.h"
 #endif
 #include "shadowlog.h"
+#include "string/memset/memzero.h"
 #include "string/sprintf/snprintf.h"
 #include "string/sprintf/xasprintf.h"
 #include "string/strdup/xstrdup.h"
@@ -1523,10 +1523,16 @@ static void process_flags (int argc, char **argv)
 		}
 
 		user_name = argv[optind];
-		if (!is_valid_user_name (user_name)) {
-			fprintf (stderr,
-			         _("%s: invalid user name '%s': use --badname to ignore\n"),
-			         Prog, user_name);
+		if (!is_valid_user_name(user_name)) {
+			if (errno == EINVAL) {
+				fprintf(stderr,
+				        _("%s: invalid user name '%s': use --badname to ignore\n"),
+				        Prog, user_name);
+			} else {
+				fprintf(stderr,
+				        _("%s: invalid user name '%s'\n"),
+				        Prog, user_name);
+			}
 #ifdef WITH_AUDIT
 			audit_logger (AUDIT_ADD_USER, Prog,
 			              "adding user",

@@ -42,7 +42,6 @@
 #include "faillog.h"
 #include "getdef.h"
 #include "groupio.h"
-#include "memzero.h"
 #include "must_be.h"
 #include "nscd.h"
 #include "sssd.h"
@@ -63,6 +62,7 @@
 #include "tcbfuncs.h"
 #endif
 #include "shadowlog.h"
+#include "string/memset/memzero.h"
 #include "string/sprintf/xasprintf.h"
 #include "string/strdup/xstrdup.h"
 #include "time/day_to_str.h"
@@ -1116,10 +1116,16 @@ process_flags(int argc, char **argv)
 				usage (E_SUCCESS);
 				/*@notreached@*/break;
 			case 'l':
-				if (!is_valid_user_name (optarg)) {
-					fprintf (stderr,
-					         _("%s: invalid user name '%s': use --badname to ignore\n"),
-					         Prog, optarg);
+				if (!is_valid_user_name(optarg)) {
+					if (errno == EINVAL) {
+						fprintf(stderr,
+						        _("%s: invalid user name '%s': use --badname to ignore\n"),
+						        Prog, optarg);
+					} else {
+						fprintf(stderr,
+						        _("%s: invalid user name '%s'\n"),
+						        Prog, optarg);
+					}
 					exit (E_BAD_ARG);
 				}
 				lflg = true;

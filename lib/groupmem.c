@@ -14,10 +14,11 @@
 
 #include "alloc/calloc.h"
 #include "alloc/malloc.h"
-#include "memzero.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "groupio.h"
+#include "string/memset/memzero.h"
+
 
 /*@null@*/ /*@only@*/struct group *__gr_dup (const struct group *grent)
 {
@@ -82,10 +83,9 @@ void
 gr_free(/*@only@*/struct group *grent)
 {
 	free (grent->gr_name);
-	if (NULL != grent->gr_passwd) {
-		strzero (grent->gr_passwd);
-		free (grent->gr_passwd);
-	}
+	if (NULL != grent->gr_passwd)
+		free(strzero(grent->gr_passwd));
+
 	gr_free_members(grent);
 	free (grent);
 }

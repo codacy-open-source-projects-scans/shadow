@@ -16,10 +16,10 @@
 #include <stdio.h>
 
 #include "attr.h"
-#include "memzero.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "getdef.h"
+#include "string/memset/memzero.h"
 #include "string/sprintf/xasprintf.h"
 #include "string/strdup/xstrdup.h"
 
@@ -112,12 +112,9 @@ static /*@observer@*//*@null@*/const char *password_check (
 	} else if (strstr (wrapped, newmono) != NULL) {
 		msg = _("rotated");
 	}
-	strzero (newmono);
-	strzero (oldmono);
-	strzero (wrapped);
-	free (newmono);
-	free (oldmono);
-	free (wrapped);
+	free(strzero(newmono));
+	free(strzero(oldmono));
+	free(strzero(wrapped));
 
 	return msg;
 }
