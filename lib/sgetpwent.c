@@ -20,6 +20,7 @@
 #include "defines.h"
 #include "prototypes.h"
 #include "shadowlog_internal.h"
+#include "string/strcmp/streq.h"
 
 
 #define	NFIELDS	7
@@ -54,7 +55,7 @@ sgetpwent(const char *buf)
 		fprintf (shadow_logfd,
 		         "%s: Too long passwd entry encountered, file corruption?\n",
 		         shadow_progname);
-		return 0;	/* fail if too long */
+		return NULL;	/* fail if too long */
 	}
 	strcpy (pwdbuf, buf);
 
@@ -76,7 +77,11 @@ sgetpwent(const char *buf)
 	 * the entry is invalid.  Also, the UID and GID must be non-blank.
 	 */
 
-	if (i != NFIELDS || *fields[2] == '\0' || *fields[3] == '\0')
+	if (i != NFIELDS)
+		return NULL;
+	if (streq(fields[2], ""))
+		return NULL;
+	if (streq(fields[3], ""))
 		return NULL;
 
 	/*

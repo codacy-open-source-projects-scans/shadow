@@ -29,7 +29,6 @@
 #ifndef USE_PAM
 #ident "$Id$"
 
-#include "prototypes.h"
     /*
      * This module implements a simple but effective form of login access
      * control based on login names and on host (or domain) names, internet
@@ -38,42 +37,36 @@
      *
      * Author: Wietse Venema, Eindhoven University of Technology, The Netherlands.
      */
-#include <sys/types.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <syslog.h>
+#include <arpa/inet.h>		/* for inet_ntoa() */
 #include <ctype.h>
-#include <netdb.h>
+#include <errno.h>
 #include <grp.h>
+#include <netdb.h>
+#include <netinet/in.h>
 #ifdef PRIMARY_GROUP_MATCH
 #include <pwd.h>
 #endif
-#include <errno.h>
-#include <string.h>
-#include <unistd.h>
+#include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/param.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>		/* for inet_ntoa() */
+#include <sys/types.h>
+#include <syslog.h>
+#include <unistd.h>
 
+#include "prototypes.h"
 #include "sizeof.h"
 #include "string/strchr/strrspn.h"
+#include "string/strcmp/streq.h"
 #include "string/strtok/stpsep.h"
 
-
-#if !defined(MAXHOSTNAMELEN) || (MAXHOSTNAMELEN < 64)
-#undef MAXHOSTNAMELEN
-#define MAXHOSTNAMELEN 256
-#endif
 
  /* Path name of the access control file. */
 #ifndef	TABLE
 #define TABLE	"/etc/login.access"
 #endif
-
-/* Delimiters for fields and for lists of users, ttys or hosts. */
-static char fs[] = ":";		/* field separator */
-static char sep[] = ", \t";	/* list-element separator */
 
 static bool list_match (char *list, const char *item, bool (*match_fn) (const char *, const char *));
 static bool user_match (const char *tok, const char *string);
@@ -82,7 +75,8 @@ static bool string_match (const char *tok, const char *string);
 static const char *resolve_hostname (const char *string);
 
 /* login_access - match username/group and host/tty with access control file */
-int login_access (const char *user, const char *from)
+int
+login_access(const char *user, const char *from)
 {
 	FILE *fp;
 	char line[BUFSIZ];
@@ -102,7 +96,10 @@ int login_access (const char *user, const char *from)
 	if (NULL != fp) {
 		int lineno = 0;	/* for diagnostics */
 		while (   !match
-		       && (fgets (line, sizeof (line), fp) == line)) {
+		       && (fgets (line, sizeof (line), fp) == line))
+		{
+			char  *p;
+
 			lineno++;
 			if (stpsep(line, "\n") == NULL) {
 				SYSLOG ((LOG_ERR,
@@ -114,13 +111,14 @@ int login_access (const char *user, const char *from)
 				continue;	/* comment line */
 			}
 			stpcpy(strrspn(line, " \t"), "");
-			if (line[0] == '\0') {	/* skip blank lines */
+			if (streq(line, "")) {	/* skip blank lines */
 				continue;
 			}
-			if (   ((perm = strtok (line, fs)) == NULL)
-			    || ((users = strtok (NULL, fs)) == NULL)
-			    || ((froms = strtok (NULL, fs)) == NULL)
-			    || (strtok (NULL, fs) != NULL)) {
+			p = line;
+			perm = strsep(&p, ":");
+			users = strsep(&p, ":");
+			froms = strsep(&p, ":");
+			if (froms == NULL || p != NULL) {
 				SYSLOG ((LOG_ERR,
 					 "%s: line %d: bad field count",
 					 TABLE, lineno));
@@ -144,8 +142,11 @@ int login_access (const char *user, const char *from)
 }
 
 /* list_match - match an item against a list of tokens with exceptions */
-static bool list_match (char *list, const char *item, bool (*match_fn) (const char *, const char*))
+static bool
+list_match(char *list, const char *item, bool (*match_fn)(const char *, const char*))
 {
+	static const char  sep[] = ", \t";
+
 	char *tok;
 	bool match = false;
 
@@ -155,7 +156,7 @@ static bool list_match (char *list, const char *item, bool (*match_fn) (const ch
 	 * a match, look for an "EXCEPT" list and recurse to determine whether
 	 * the match is affected by any exceptions.
 	 */
-	for (tok = strtok (list, sep); tok != NULL; tok = strtok (NULL, sep)) {
+	while (NULL != (tok = strsep(&list, sep))) {
 		if (strcasecmp (tok, "EXCEPT") == 0) {	/* EXCEPT: give up */
 			break;
 		}
@@ -167,10 +168,10 @@ static bool list_match (char *list, const char *item, bool (*match_fn) (const ch
 
 	/* Process exceptions to matches. */
 	if (match) {
-		while (   ((tok = strtok (NULL, sep)) != NULL)
+		while (   (NULL != (tok = strsep(&list, sep)))
 		       && (strcasecmp (tok, "EXCEPT") != 0))
 			/* VOID */ ;
-		if (tok == 0 || !list_match (NULL, item, match_fn)) {
+		if (tok == NULL || !list_match(NULL, item, match_fn)) {
 			return (match);
 		}
 	}
@@ -182,7 +183,7 @@ static char *myhostname (void)
 {
 	static char name[MAXHOSTNAMELEN + 1] = "";
 
-	if (name[0] == '\0') {
+	if (streq(name, "")) {
 		gethostname (name, sizeof (name));
 		stpcpy(&name[MAXHOSTNAMELEN], "");
 	}
@@ -266,7 +267,7 @@ static const char *resolve_hostname (const char *string)
 	const char       *addr_str;
 	struct addrinfo  *addrs;
 
-	static char      host[MAXHOSTNAMELEN];
+	static char      host[NI_MAXHOST];
 
 	gai_err = getaddrinfo(string, NULL, NULL, &addrs);
 	if (gai_err != 0) {
@@ -319,7 +320,7 @@ static bool from_match (const char *tok, const char *string)
 		if (strchr (string, '.') == NULL) {
 			return true;
 		}
-	} else if (   (tok[0] != '\0' && tok[(tok_len = strlen (tok)) - 1] == '.') /* network */
+	} else if (   (!streq(tok, "") && tok[(tok_len = strlen(tok)) - 1] == '.') /* network */
 		   && (strncmp (tok, resolve_hostname (string), tok_len) == 0)) {
 		return true;
 	}

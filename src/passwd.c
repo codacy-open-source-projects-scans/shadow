@@ -22,21 +22,22 @@
 
 #include "agetpass.h"
 #include "atoi/a2i/a2s.h"
+#include "chkname.h"
 #include "defines.h"
 #include "getdef.h"
 #include "nscd.h"
-#include "sssd.h"
 #include "prototypes.h"
 #include "pwauth.h"
 #include "pwio.h"
 #include "shadowio.h"
 #include "shadowlog.h"
+#include "sssd.h"
 #include "string/memset/memzero.h"
 #include "string/sprintf/xasprintf.h"
+#include "string/strcmp/streq.h"
 #include "string/strcpy/strtcpy.h"
 #include "string/strdup/xstrdup.h"
 #include "time/day_to_str.h"
-#include "chkname.h"
 
 
 /*
@@ -193,7 +194,7 @@ static int new_password (const struct passwd *pw)
 	 * password.
 	 */
 
-	if (!amroot && ('\0' != crypt_passwd[0])) {
+	if (!amroot && !streq(crypt_passwd, "")) {
 		clear = agetpass (_("Old password: "));
 		if (NULL == clear) {
 			return -1;
@@ -212,7 +213,7 @@ static int new_password (const struct passwd *pw)
 			return -1;
 		}
 
-		if (strcmp (cipher, crypt_passwd) != 0) {
+		if (!streq(cipher, crypt_passwd)) {
 			erase_pass (clear);
 			strzero (cipher);
 			SYSLOG ((LOG_WARN, "incorrect password for %s",
@@ -242,16 +243,16 @@ static int new_password (const struct passwd *pw)
 			pass_max_len = getdef_num ("PASS_MAX_LEN", 8);
 		}
 	} else {
-		if (   (strcmp (method, "MD5")    == 0)
+		if (   streq(method, "MD5")
 #ifdef USE_SHA_CRYPT
-		    || (strcmp (method, "SHA256") == 0)
-		    || (strcmp (method, "SHA512") == 0)
+		    || streq(method, "SHA256")
+		    || streq(method, "SHA512")
 #endif /* USE_SHA_CRYPT */
 #ifdef USE_BCRYPT
-		    || (strcmp (method, "BCRYPT") == 0)
+		    || streq(method, "BCRYPT")
 #endif /* USE_BCRYPT*/
 #ifdef USE_YESCRYPT
-		    || (strcmp (method, "YESCRYPT") == 0)
+		    || streq(method, "YESCRYPT")
 #endif /* USE_YESCRYPT*/
 
 		    ) {
@@ -298,7 +299,7 @@ static int new_password (const struct passwd *pw)
 				MEMZERO(pass);
 				return -1;
 			}
-			if (warned && (strcmp (pass, cp) != 0)) {
+			if (warned && !streq(pass, cp)) {
 				warned = false;
 			}
 			ret = STRTCPY (pass, cp);
@@ -332,7 +333,7 @@ static int new_password (const struct passwd *pw)
 				MEMZERO(pass);
 				return -1;
 			}
-			if (strcmp (cp, pass) != 0) {
+			if (!streq(cp, pass)) {
 				erase_pass (cp);
 				(void) fputs (_("They don't match; try again.\n"), stderr);
 			} else {
@@ -440,7 +441,7 @@ static /*@observer@*/const char *pw_status (const char *pass)
 	if (*pass == '*' || *pass == '!') {
 		return "L";
 	}
-	if (*pass == '\0') {
+	if (streq(pass, "")) {
 		return "NP";
 	}
 	return "P";
@@ -838,7 +839,7 @@ main(int argc, char **argv)
 			case 'r':
 				/* -r repository (files|nis|nisplus) */
 				/* only "files" supported for now */
-				if (strcmp (optarg, "files") != 0) {
+				if (!streq(optarg, "files")) {
 					fprintf (stderr,
 					         _("%s: repository %s not supported\n"),
 						 Prog, optarg);

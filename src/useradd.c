@@ -45,7 +45,6 @@
 #include "getdef.h"
 #include "groupio.h"
 #include "nscd.h"
-#include "sssd.h"
 #include "prototypes.h"
 #include "pwauth.h"
 #include "pwio.h"
@@ -64,9 +63,11 @@
 #include "tcbfuncs.h"
 #endif
 #include "shadowlog.h"
+#include "sssd.h"
 #include "string/memset/memzero.h"
 #include "string/sprintf/snprintf.h"
 #include "string/sprintf/xasprintf.h"
+#include "string/strcmp/streq.h"
 #include "string/strdup/xstrdup.h"
 #include "string/strtok/stpsep.h"
 
@@ -176,7 +177,7 @@ static bool
     Uflg = false;		/* create a group having the same name as the user */
 
 #ifdef WITH_SELINUX
-#define Zflg ('\0' != *user_selinux)
+#define Zflg  (!streq(user_selinux, ""))
 #endif				/* WITH_SELINUX */
 
 static bool home_added = false;
@@ -370,7 +371,7 @@ get_defaults(void)
 		/*
 		 * Primary GROUP identifier
 		 */
-		if (strcmp(buf, DGROUP) == 0) {
+		if (streq(buf, DGROUP)) {
 			const struct group *grp = prefix_getgr_nam_gid (cp);
 			if (NULL == grp) {
 				fprintf (stderr,
@@ -387,7 +388,7 @@ get_defaults(void)
 
 		ccp = cp;
 
-		if (strcmp(buf, DGROUPS) == 0) {
+		if (streq(buf, DGROUPS)) {
 			if (get_groups (cp) != 0) {
 				fprintf (stderr,
 				         _("%s: the '%s=' configuration in %s has an invalid group, ignoring the bad group\n"),
@@ -401,21 +402,21 @@ get_defaults(void)
 		/*
 		 * Default HOME filesystem
 		 */
-		else if (strcmp(buf, DHOME) == 0) {
+		else if (streq(buf, DHOME)) {
 			def_home = xstrdup(ccp);
 		}
 
 		/*
 		 * Default Login Shell command
 		 */
-		else if (strcmp(buf, DSHELL) == 0) {
+		else if (streq(buf, DSHELL)) {
 			def_shell = xstrdup(ccp);
 		}
 
 		/*
 		 * Default Password Inactive value
 		 */
-		else if (strcmp(buf, DINACT) == 0) {
+		else if (streq(buf, DINACT)) {
 			if (a2sl(&def_inactive, ccp, NULL, 0, -1, LONG_MAX) == -1) {
 				fprintf (stderr,
 				         _("%s: invalid numeric argument '%s'\n"),
@@ -430,15 +431,15 @@ get_defaults(void)
 		/*
 		 * Default account expiration date
 		 */
-		else if (strcmp(buf, DEXPIRE) == 0) {
+		else if (streq(buf, DEXPIRE)) {
 			def_expire = xstrdup(ccp);
 		}
 
 		/*
 		 * Default Skeleton information
 		 */
-		else if (strcmp(buf, DSKEL) == 0) {
-			if ('\0' == *ccp)
+		else if (streq(buf, DSKEL)) {
+			if (streq(ccp, ""))
 				ccp = SKEL_DIR;
 
 			if (prefix[0]) {
@@ -454,8 +455,8 @@ get_defaults(void)
 		/*
 		 * Default Usr Skeleton information
 		 */
-		else if (strcmp(buf, DUSRSKEL) == 0) {
-			if ('\0' == *ccp)
+		else if (streq(buf, DUSRSKEL)) {
+			if (streq(ccp, ""))
 				ccp = USRSKELDIR;
 
 			if (prefix[0]) {
@@ -470,8 +471,8 @@ get_defaults(void)
 		/*
 		 * Create by default user mail spool or not ?
 		 */
-		else if (strcmp(buf, DCREATE_MAIL_SPOOL) == 0) {
-			if (*ccp == '\0')
+		else if (streq(buf, DCREATE_MAIL_SPOOL)) {
+			if (streq(ccp, ""))
 				ccp = "no";
 
 			def_create_mail_spool = xstrdup(ccp);
@@ -480,8 +481,8 @@ get_defaults(void)
 		/*
 		 * By default do we add the user to the lastlog and faillog databases ?
 		 */
-		else if (strcmp(buf, DLOG_INIT) == 0) {
-			if (*ccp == '\0')
+		else if (streq(buf, DLOG_INIT)) {
+			if (streq(ccp, ""))
 				ccp = def_log_init;
 
 			def_log_init = xstrdup(ccp);
@@ -620,38 +621,38 @@ set_defaults(void)
 		val = stpsep(buf, "=");
 		if (val == NULL) {
 			fprintf(ofp, "%s\n", buf);
-		} else if (!out_group && strcmp(buf, DGROUP) == 0) {
+		} else if (!out_group && streq(buf, DGROUP)) {
 			fprintf(ofp, DGROUP "=%u\n", (unsigned int) def_group);
 			out_group = true;
-		} else if (!out_groups && strcmp(buf, DGROUPS) == 0) {
+		} else if (!out_groups && streq(buf, DGROUPS)) {
 			fprintf(ofp, DGROUPS "=%s\n", def_groups);
 			out_groups = true;
-		} else if (!out_home && strcmp(buf, DHOME) == 0) {
+		} else if (!out_home && streq(buf, DHOME)) {
 			fprintf(ofp, DHOME "=%s\n", def_home);
 			out_home = true;
-		} else if (!out_inactive && strcmp(buf, DINACT) == 0) {
+		} else if (!out_inactive && streq(buf, DINACT)) {
 			fprintf(ofp, DINACT "=%ld\n", def_inactive);
 			out_inactive = true;
-		} else if (!out_expire && strcmp(buf, DEXPIRE) == 0) {
+		} else if (!out_expire && streq(buf, DEXPIRE)) {
 			fprintf(ofp, DEXPIRE "=%s\n", def_expire);
 			out_expire = true;
-		} else if (!out_shell && strcmp(buf, DSHELL) == 0) {
+		} else if (!out_shell && streq(buf, DSHELL)) {
 			fprintf(ofp, DSHELL "=%s\n", def_shell);
 			out_shell = true;
-		} else if (!out_skel && strcmp(buf, DSKEL) == 0) {
+		} else if (!out_skel && streq(buf, DSKEL)) {
 			fprintf(ofp, DSKEL "=%s\n", def_template);
 			out_skel = true;
-		} else if (!out_usrskel && strcmp(buf, DUSRSKEL) == 0) {
+		} else if (!out_usrskel && streq(buf, DUSRSKEL)) {
 			fprintf(ofp, DUSRSKEL "=%s\n", def_usrtemplate);
 			out_usrskel = true;
 		} else if (!out_create_mail_spool
-			   && strcmp(buf, DCREATE_MAIL_SPOOL) == 0)
+			   && streq(buf, DCREATE_MAIL_SPOOL))
 		{
 			fprintf(ofp,
 			        DCREATE_MAIL_SPOOL "=%s\n",
 			        def_create_mail_spool);
 			out_create_mail_spool = true;
-		} else if (!out_log_init && strcmp(buf, DLOG_INIT) == 0) {
+		} else if (!out_log_init && streq(buf, DLOG_INIT)) {
 			fprintf(ofp, DLOG_INIT "=%s\n", def_log_init);
 			out_log_init = true;
 		} else {
@@ -760,7 +761,16 @@ static int get_groups (char *list)
 	int errors = 0;
 	int ngroups = 0;
 
-	if ('\0' == *list) {
+	/*
+	 * Free previous group list before creating a new one.
+	 */
+	int i = 0;
+	while (NULL != user_groups[i]) {
+		free(user_groups[i]);
+		user_groups[i++] = NULL;
+	}
+
+	if (streq(list, "")) {
 		return 0;
 	}
 
@@ -774,7 +784,7 @@ static int get_groups (char *list)
 	 * each name and look it up. A mix of numerical and string
 	 * values for group identifiers is permitted.
 	 */
-	do {
+	while (NULL != list) {
 		char  *g;
 
 		/*
@@ -822,7 +832,7 @@ static int get_groups (char *list)
 		 */
 		user_groups[ngroups++] = xstrdup (grp->gr_name);
 		gr_free (grp);
-	} while (NULL != list);
+	}
 
 	close_group_files ();
 	unlock_group_files ();
@@ -1258,7 +1268,7 @@ static void process_flags (int argc, char **argv)
 				Dflg = true;
 				break;
 			case 'e':
-				if ('\0' != *optarg) {
+				if (!streq(optarg, "")) {
 					user_expire = strtoday (optarg);
 					if (user_expire < -1) {
 						fprintf (stderr,
@@ -1393,7 +1403,7 @@ static void process_flags (int argc, char **argv)
 				break;
 			case 's':
 				if (   ( !VALID (optarg) )
-				    || (   ('\0' != optarg[0])
+				    || (   !streq(optarg, "")
 				        && ('/'  != optarg[0])
 				        && ('*'  != optarg[0]) )) {
 					fprintf (stderr,
@@ -1401,9 +1411,9 @@ static void process_flags (int argc, char **argv)
 					         Prog, optarg);
 					exit (E_BAD_ARG);
 				}
-				if (    '\0' != optarg[0]
+				if (!streq(optarg, "")
 				     && '*'  != optarg[0]
-				     && strcmp(optarg, "/sbin/nologin") != 0
+				     && !streq(optarg, "/sbin/nologin")
 				     && (   stat(optarg, &st) != 0
 				         || S_ISDIR(st.st_mode)
 				         || access(optarg, X_OK) != 0)) {
@@ -1574,7 +1584,7 @@ static void process_flags (int argc, char **argv)
 	if (!lflg) {
 		/* If we are missing the flag lflg aka -l, check the defaults
 		* file to see if we need to disable it as a default*/
-		if (strcmp (def_log_init, "no") == 0) {
+		if (streq(def_log_init, "no")) {
 			lflg = true;
 		}
 	}

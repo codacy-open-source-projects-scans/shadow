@@ -19,15 +19,16 @@
 
 #include "agetpass.h"
 #include "alloc/x/xmalloc.h"
+#include "chkname.h"
 #include "defines.h"
-#include "getdef.h"
-#include "prototypes.h"
 /*@-exitarg@*/
 #include "exitcodes.h"
+#include "getdef.h"
+#include "prototypes.h"
 #include "shadowlog.h"
 #include "string/sprintf/snprintf.h"
+#include "string/strcmp/streq.h"
 #include "string/strdup/xstrdup.h"
-#include "chkname.h"
 
 
 /*
@@ -74,7 +75,7 @@ static bool ingroup(const char *name, struct group *gr)
 
 	look = gr->gr_mem;
 	while (*look && notfound)
-		notfound = strcmp (*look++, name);
+		notfound = !streq(*look++, name);
 
 	return !notfound;
 }
@@ -149,7 +150,7 @@ static void check_perms (const struct group *grp,
 		spw_free (spwd);
 	}
 
-	if ((pwd->pw_passwd[0] == '\0') && (grp->gr_passwd[0] != '\0')) {
+	if (streq(pwd->pw_passwd, "") && !streq(grp->gr_passwd, "")) {
 		needspasswd = true;
 	}
 
@@ -187,8 +188,8 @@ static void check_perms (const struct group *grp,
 			goto failure;
 		}
 
-		if (grp->gr_passwd[0] == '\0' ||
-		    strcmp (cpasswd, grp->gr_passwd) != 0) {
+		if (streq(grp->gr_passwd, "") ||
+		    !streq(grp->gr_passwd, cpasswd)) {
 #ifdef WITH_AUDIT
 			SNPRINTF(audit_buf, "authentication new-gid=%lu",
 			         (unsigned long) grp->gr_gid);
@@ -428,7 +429,7 @@ int main (int argc, char **argv)
 	 * injecting arbitrary strings into our stderr/stdout, as this can
 	 * be an exploit vector.
 	 */
-	is_newgrp = (strcmp (Basename (argv[0]), "newgrp") == 0);
+	is_newgrp = streq(Basename (argv[0]), "newgrp");
 	Prog = is_newgrp ? "newgrp" : "sg";
 
 	log_set_progname(Prog);
@@ -472,8 +473,8 @@ int main (int argc, char **argv)
 	 *      sg [-] groupid [[-c command]
 	 */
 	if (   (argc > 0)
-	    && (   (strcmp (argv[0], "-")  == 0)
-	        || (strcmp (argv[0], "-l") == 0))) {
+	    && (   streq(argv[0], "-")
+	        || streq(argv[0], "-l"))) {
 		argc--;
 		argv++;
 		initflag = true;
@@ -505,7 +506,7 @@ int main (int argc, char **argv)
 			 * "sg group -c command" (as in the man page) or
 			 * "sg group command" (as in the usage message).
 			 */
-			if ((argc > 1) && (strcmp (argv[0], "-c") == 0)) {
+			if ((argc > 1) && streq(argv[0], "-c")) {
 				command = argv[1];
 			} else {
 				command = argv[0];
@@ -785,7 +786,7 @@ int main (int argc, char **argv)
 	cp = getenv ("SHELL");
 	if (!initflag && (NULL != cp)) {
 		prog = cp;
-	} else if ((NULL != pwd->pw_shell) && ('\0' != pwd->pw_shell[0])) {
+	} else if ((NULL != pwd->pw_shell) && !streq(pwd->pw_shell, "")) {
 		prog = pwd->pw_shell;
 	} else {
 		prog = SHELL;

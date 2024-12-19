@@ -23,6 +23,7 @@
 #include "alloc/reallocf.h"
 #include "atoi/str2i/str2u.h"
 #include "string/sprintf/snprintf.h"
+#include "string/strcmp/streq.h"
 
 
 #define ID_SIZE 31
@@ -107,7 +108,13 @@ subordinate_parse(const char *line)
 	 * There must be exactly SUBID_NFIELDS colon separated fields or
 	 * the entry is invalid.  Also, fields must be non-blank.
 	 */
-	if (i != SUBID_NFIELDS || *fields[0] == '\0' || *fields[1] == '\0' || *fields[2] == '\0')
+	if (i != SUBID_NFIELDS)
+		return NULL;
+	if (streq(fields[0], ""))
+		return NULL;
+	if (streq(fields[1], ""))
+		return NULL;
+	if (streq(fields[2], ""))
 		return NULL;
 	range.owner = fields[0];
 	if (str2ul(&range.start, fields[1]) == -1)
@@ -161,7 +168,7 @@ static bool range_exists(struct commonio_db *db, const char *owner)
 	const struct subordinate_range *range;
 	commonio_rewind(db);
 	while ((range = commonio_next(db)) != NULL) {
-		if (0 == strcmp(range->owner, owner))
+		if (streq(range->owner, owner))
 			return true;
 	}
 	return false;
@@ -196,7 +203,7 @@ static const struct subordinate_range *find_range(struct commonio_db *db,
 		unsigned long first = range->start;
 		unsigned long last = first + range->count - 1;
 
-		if (0 != strcmp(range->owner, owner))
+		if (!streq(range->owner, owner))
 			continue;
 
 		if ((val >= first) && (val <= last))
@@ -207,7 +214,7 @@ static const struct subordinate_range *find_range(struct commonio_db *db,
         /*
          * We only do special handling for these two files
          */
-        if ((0 != strcmp(db->filename, SUBUID_FILE)) && (0 != strcmp(db->filename, SUBGID_FILE)))
+        if (!streq(db->filename, SUBUID_FILE) && !streq(db->filename, SUBGID_FILE))
                 return NULL;
 
         /*
@@ -246,7 +253,7 @@ static const struct subordinate_range *find_range(struct commonio_db *db,
                  * Range matches. Check if range owner is specified
                  * as numeric UID and if it matches.
                  */
-                if (0 == strcmp(range->owner, owner_uid_string)) {
+                if (streq(range->owner, owner_uid_string)) {
                         return range;
                 }
 
@@ -464,7 +471,7 @@ static int remove_range (struct commonio_db *db,
 		last = first + range->count - 1;
 
 		/* Skip entries with a different owner */
-		if (0 != strcmp (range->owner, owner)) {
+		if (!streq(range->owner, owner)) {
 			continue;
 		}
 
@@ -889,7 +896,7 @@ int list_owner_ranges(const char *owner, enum subid_type id_type, struct subid_r
 
 	commonio_rewind(db);
 	while ((range = commonio_next(db)) != NULL) {
-		if (0 == strcmp(range->owner, owner)) {
+		if (streq(range->owner, owner)) {
 			if (!append_range(&ranges, range, count++)) {
 				free(ranges);
 				ranges = NULL;
@@ -899,7 +906,7 @@ int list_owner_ranges(const char *owner, enum subid_type id_type, struct subid_r
 		}
 
 		// Let's also compare with the ID
-		if (have_owner_id == true && 0 == strcmp(range->owner, id)) {
+		if (have_owner_id == true && streq(range->owner, id)) {
 			if (!append_range(&ranges, range, count++)) {
 				free(ranges);
 				ranges = NULL;
@@ -1061,7 +1068,7 @@ bool new_subid_range(struct subordinate_range *range, enum subid_type id_type, b
 	if (reuse) {
 		while ((r = commonio_next(db)) != NULL) {
 			// TODO account for username vs uid_t
-			if (0 != strcmp(r->owner, range->owner))
+			if (!streq(r->owner, range->owner))
 				continue;
 			if (r->count >= range->count) {
 				range->count = r->count;

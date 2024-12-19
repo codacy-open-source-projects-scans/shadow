@@ -32,6 +32,7 @@
 #include "string/sprintf/xasprintf.h"
 #include "string/strchr/stpspn.h"
 #include "string/strchr/strrspn.h"
+#include "string/strcmp/streq.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -157,7 +158,6 @@ static struct itemdef def_table[] = {
 	{NULL, NULL}
 };
 
-#define NUMKNOWNDEFS	(sizeof(knowndef_table)/sizeof(knowndef_table[0]))
 static struct itemdef knowndef_table[] = {
 #ifdef USE_PAM
 	PAMDEFS
@@ -420,7 +420,7 @@ static /*@observer@*/ /*@null@*/struct itemdef *def_find (const char *name, cons
 	 */
 
 	for (ptr = def_table; NULL != ptr->name; ptr++) {
-		if (strcmp (ptr->name, name) == 0) {
+		if (streq(ptr->name, name)) {
 			return ptr;
 		}
 	}
@@ -430,7 +430,7 @@ static /*@observer@*/ /*@null@*/struct itemdef *def_find (const char *name, cons
 	 */
 
 	for (ptr = knowndef_table; NULL != ptr->name; ptr++) {
-		if (strcmp (ptr->name, name) == 0) {
+		if (streq(ptr->name, name)) {
 			goto out;
 		}
 	}
@@ -567,7 +567,7 @@ static void def_load (void)
 		 * Break the line into two fields.
 		 */
 		name = stpspn(buf, " \t");	/* first nonwhite */
-		if (*name == '\0' || *name == '#')
+		if (streq(name, "") || *name == '#')
 			continue;	/* comment or empty */
 
 		s = stpsep(name, " \t");  /* next field */

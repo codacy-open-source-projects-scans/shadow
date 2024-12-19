@@ -16,6 +16,7 @@
 #include "defines.h"
 #include "getdef.h"
 #include "prototypes.h"
+#include "string/strcmp/streq.h"
 #include "string/strcpy/strtcpy.h"
 #include "string/strtok/stpsep.h"
 
@@ -25,7 +26,8 @@
  * under "cfgin" in config (directly or indirectly). Fallback to default if
  * something is bad.
  */
-static bool is_listed (const char *cfgin, const char *tty, bool def)
+static bool
+is_listed(const char *cfgin, const char *tty, bool def)
 {
 	FILE *fp;
 	char buf[1024], *s;
@@ -48,14 +50,13 @@ static bool is_listed (const char *cfgin, const char *tty, bool def)
 
 	if (*cons != '/') {
 		char *pbuf;
+
 		STRTCPY(buf, cons);
-		pbuf = &buf[0];
-		while ((s = strtok (pbuf, ":")) != NULL) {
-			if (strcmp (s, tty) == 0) {
+		pbuf = buf;
+		while (NULL != (s = strsep(&pbuf, ":"))) {
+			if (streq(s, tty)) {
 				return true;
 			}
-
-			pbuf = NULL;
 		}
 		return false;
 	}
@@ -76,7 +77,7 @@ static bool is_listed (const char *cfgin, const char *tty, bool def)
 
 	while (fgets (buf, sizeof (buf), fp) != NULL) {
 		stpsep(buf, "\n");
-		if (strcmp (buf, tty) == 0) {
+		if (streq(buf, tty)) {
 			(void) fclose (fp);
 			return true;
 		}

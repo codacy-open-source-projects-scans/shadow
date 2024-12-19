@@ -44,7 +44,6 @@
 #include "groupio.h"
 #include "must_be.h"
 #include "nscd.h"
-#include "sssd.h"
 #include "prototypes.h"
 #include "pwauth.h"
 #include "pwio.h"
@@ -62,8 +61,10 @@
 #include "tcbfuncs.h"
 #endif
 #include "shadowlog.h"
+#include "sssd.h"
 #include "string/memset/memzero.h"
 #include "string/sprintf/xasprintf.h"
+#include "string/strcmp/streq.h"
 #include "string/strdup/xstrdup.h"
 #include "time/day_to_str.h"
 
@@ -226,7 +227,7 @@ static int get_groups (char *list)
 	 */
 	user_groups[0] = NULL;
 
-	if ('\0' == *list) {
+	if (streq(list, "")) {
 		return 0;
 	}
 
@@ -235,7 +236,7 @@ static int get_groups (char *list)
 	 * name and look it up. A mix of numerical and string values for
 	 * group identifiers is permitted.
 	 */
-	do {
+	while (NULL != list) {
 		char  *g;
 
 		/*
@@ -280,7 +281,7 @@ static int get_groups (char *list)
 		 */
 		user_groups[ngroups++] = xstrdup (grp->gr_name);
 		gr_free (grp);
-	} while (NULL != list);
+	}
 
 	user_groups[ngroups] = NULL;
 
@@ -495,7 +496,7 @@ static void new_pwent (struct passwd *pwent)
 	 * used for this account.
 	 */
 	if (   (!is_shadow_pwd)
-	    || (strcmp (pwent->pw_passwd, SHADOW_PASSWD_STRING) != 0)) {
+	    || !streq(pwent->pw_passwd, SHADOW_PASSWD_STRING)) {
 		pwent->pw_passwd = new_pw_passwd (pwent->pw_passwd);
 	}
 
@@ -1062,7 +1063,7 @@ process_flags(int argc, char **argv)
 				}
 				dflg = true;
 				user_newhome = optarg;
-				if (user_newhome[0] != '/') {
+				if ((user_newhome[0] != '/') && !streq(user_newhome, "")) {
 					fprintf (stderr,
 					         _("%s: homedir must be an absolute path\n"),
 					         Prog);
@@ -1153,7 +1154,7 @@ process_flags(int argc, char **argv)
 				break;
 			case 's':
 				if (   ( !VALID (optarg) )
-				    || (   ('\0' != optarg[0])
+				    || (   !streq(optarg, "")
 				        && ('/'  != optarg[0])
 				        && ('*'  != optarg[0]) )) {
 					fprintf (stderr,
@@ -1161,9 +1162,9 @@ process_flags(int argc, char **argv)
 					         Prog, optarg);
 					exit (E_BAD_ARG);
 				}
-				if (    '\0' != optarg[0]
+				if (!streq(optarg, "")
 				     && '*'  != optarg[0]
-				     && strcmp(optarg, "/sbin/nologin") != 0
+				     && !streq(optarg, "/sbin/nologin")
 				     && (   stat(optarg, &st) != 0
 				         || S_ISDIR(st.st_mode)
 				         || access(optarg, X_OK) != 0)) {
@@ -1373,10 +1374,10 @@ process_flags(int argc, char **argv)
 		gflg = false;
 	}
 	if (   (NULL != user_newshell)
-	    && (strcmp (user_newshell, user_shell) == 0)) {
+	    && streq(user_newshell, user_shell)) {
 		sflg = false;
 	}
-	if (strcmp (user_newname, user_name) == 0) {
+	if (streq(user_newname, user_name)) {
 		lflg = false;
 	}
 	if (user_newinactive == user_inactive) {
@@ -1386,12 +1387,12 @@ process_flags(int argc, char **argv)
 		eflg = false;
 	}
 	if (   (NULL != user_newhome)
-	    && (strcmp (user_newhome, user_home) == 0)) {
+	    && streq(user_newhome, user_home)) {
 		dflg = false;
 		mflg = false;
 	}
 	if (   (NULL != user_newcomment)
-	    && (strcmp (user_newcomment, user_comment) == 0)) {
+	    && streq(user_newcomment, user_comment)) {
 		cflg = false;
 	}
 
@@ -1726,7 +1727,7 @@ static void usr_update (void)
 			spent = *spwd;
 			new_spent (&spent);
 		} else if (   (    pflg
-		               && (strcmp (pwent.pw_passwd, SHADOW_PASSWD_STRING) == 0))
+		               && streq(pwent.pw_passwd, SHADOW_PASSWD_STRING))
 		           || eflg || fflg) {
 			/* In some cases, we force the creation of a
 			 * shadow entry:
@@ -2185,7 +2186,7 @@ int main (int argc, char **argv)
 	 * be changed while the user is logged in.
 	 * Note: no need to check if a prefix is specified...
 	 */
-	if ( (prefix[0] == '\0') &&  (uflg || lflg || dflg
+	if (streq(prefix, "") && (uflg || lflg || dflg
 #ifdef ENABLE_SUBIDS
 	        || Vflg || Wflg
 #endif				/* ENABLE_SUBIDS */
@@ -2333,7 +2334,7 @@ int main (int argc, char **argv)
 
 #ifdef WITH_SELINUX
 	if (Zflg) {
-		if ('\0' != *user_selinux) {
+		if (!streq(user_selinux, "")) {
 			if (set_seuser (user_name, user_selinux, user_selinux_range) != 0) {
 				fprintf (stderr,
 				         _("%s: warning: the user name %s to %s SELinux user mapping failed.\n"),

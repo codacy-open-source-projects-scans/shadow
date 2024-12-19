@@ -19,6 +19,7 @@
 #include "defines.h"
 #include "port.h"
 #include "prototypes.h"
+#include "string/strcmp/streq.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -38,15 +39,15 @@ static int portcmp (const char *pattern, const char *port)
 {
 	const char *orig = port;
 
-	while (('\0' != *pattern) && (*pattern == *port)) {
+	while (!streq(pattern, "") && (*pattern == *port)) {
 		pattern++;
 		port++;
 	}
 
-	if (('\0' == *pattern) && ('\0' == *port)) {
+	if (streq(pattern, "") && streq(port, "")) {
 		return 0;
 	}
-	if (strcmp(orig, "SU") == 0)
+	if (streq(orig, "SU"))
 		return 1;
 
 	return (*pattern == '*') ? 0 : 1;
@@ -121,7 +122,7 @@ getportent(void)
 
 	if (NULL == ports) {
 		errno = saveerr;
-		return 0;
+		return NULL;
 	}
 
 	/*
@@ -203,8 +204,8 @@ next:
 
 	cp = field;
 
-	if ('\0' == *cp) {
-		port.pt_times = 0;
+	if (streq(cp, "")) {
+		port.pt_times = NULL;
 		return &port;
 	}
 
@@ -214,7 +215,7 @@ next:
 	 * Get the next comma separated entry
 	 */
 
-	for (j = 0; ('\0' != *cp) && (j < PORT_TIMES); j++) {
+	for (j = 0; !streq(cp, "") && (j < PORT_TIMES); j++) {
 
 		/*
 		 * Start off with no days of the week
@@ -259,7 +260,7 @@ next:
 				break;
 			default:
 				errno = EINVAL;
-				return 0;
+				return NULL;
 			}
 		}
 
@@ -339,9 +340,9 @@ getttyuser(const char *tty, const char *user)
 			continue;
 
 		for (ptu = port->pt_users; *ptu != NULL; ptu++) {
-			if (strcmp(*ptu, user) == 0)
+			if (streq(*ptu, user))
 				goto end;
-			if (strcmp(*ptu, "*") == 0)
+			if (streq(*ptu, "*"))
 				goto end;
 		}
 	}
@@ -380,7 +381,7 @@ bool isttytime (const char *id, const char *port, time_t when)
 	 * ever let them login.
 	 */
 
-	if (0 == pp->pt_times) {
+	if (NULL == pp->pt_times) {
 		return false;
 	}
 

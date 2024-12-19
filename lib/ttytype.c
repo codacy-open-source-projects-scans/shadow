@@ -17,6 +17,7 @@
 #include "defines.h"
 #include "getdef.h"
 #include "prototypes.h"
+#include "string/strcmp/streq.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -53,11 +54,11 @@ void ttytype (const char *line)
 		stpsep(buf, "\n");
 
 		if (   (sscanf (buf, "%1023s %1023s", type, port) == 2)
-		    && (strcmp (line, port) == 0)) {
+		    && streq(line, port)) {
 			break;
 		}
 	}
-	if ((feof (fp) == 0) && (ferror (fp) == 0) && (type[0] != '\0')) {
+	if ((feof(fp) == 0) && (ferror(fp) == 0) && !streq(type, "")) {
 		addenv ("TERM", type);
 	}
 

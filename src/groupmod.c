@@ -17,6 +17,7 @@
 #include <grp.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <strings.h>
 #include <sys/types.h>
 #ifdef ACCT_TOOLS_SETUID
@@ -31,15 +32,16 @@
 #include "chkname.h"
 #include "defines.h"
 #include "groupio.h"
-#include "pwio.h"
 #include "nscd.h"
-#include "sssd.h"
 #include "prototypes.h"
+#include "pwio.h"
 #ifdef	SHADOWGRP
 #include "sgroupio.h"
 #endif
 #include "shadowlog.h"
+#include "sssd.h"
 #include "string/sprintf/stpeprintf.h"
+#include "string/strcmp/streq.h"
 #include "string/strcpy/stpecpy.h"
 #include "string/strdup/xstrdup.h"
 
@@ -154,7 +156,7 @@ static void new_grent (struct group *grent)
 	if (   pflg
 #ifdef SHADOWGRP
 	    && (   (!is_shadow_grp)
-	        || (strcmp (grent->gr_passwd, SHADOW_PASSWD_STRING) != 0))
+	        || !streq(grent->gr_passwd, SHADOW_PASSWD_STRING))
 #endif
 		) {
 		/* Update the password in group if there is no gshadow
@@ -197,7 +199,8 @@ static void new_sgent (struct sgrp *sgent)
  *
  *	grp_update() updates the new records in the memory databases.
  */
-static void grp_update (void)
+static void
+grp_update(void)
 {
 	struct group grp;
 	const struct group *ogrp;
@@ -221,13 +224,13 @@ static void grp_update (void)
 	new_grent (&grp);
 #ifdef	SHADOWGRP
 	if (   is_shadow_grp
-	    && (pflg || nflg)) {
+	    && (pflg || nflg || user_list)) {
 		osgrp = sgr_locate (group_name);
 		if (NULL != osgrp) {
 			sgrp = *osgrp;
 			new_sgent (&sgrp);
 		} else if (   pflg
-		           && (strcmp (grp.gr_passwd, SHADOW_PASSWD_STRING) == 0)) {
+		           && streq(grp.gr_passwd, SHADOW_PASSWD_STRING)) {
 			static char *empty = NULL;
 			/* If there is a gshadow file with no entries for
 			 * the group, but the group file indicates a
@@ -250,7 +253,7 @@ static void grp_update (void)
 	}
 
 	if (user_list) {
-		char *token;
+		char  *u, *ul;
 
 		if (!aflg) {
 			// requested to replace the existing groups
@@ -261,15 +264,30 @@ static void grp_update (void)
 			if (NULL != grp.gr_mem[0])
 				grp.gr_mem = dup_list (grp.gr_mem);
 		}
+#ifdef	SHADOWGRP
+		if (NULL != osgrp) {
+			if (!aflg) {
+				sgrp.sg_mem = XMALLOC(1, char *);
+				sgrp.sg_mem[0] = NULL;
+			} else {
+				if (NULL != sgrp.sg_mem[0])
+					sgrp.sg_mem = dup_list(sgrp.sg_mem);
+			}
+		}
+#endif				/* SHADOWGRP */
 
-		token = strtok(user_list, ",");
-		while (token) {
-			if (prefix_getpwnam (token) == NULL) {
-				fprintf (stderr, _("Invalid member username %s\n"), token);
+		ul = user_list;
+		while (NULL != (u = strsep(&ul, ","))) {
+			if (prefix_getpwnam(u) == NULL) {
+				fprintf(stderr, _("Invalid member username %s\n"), u);
 				exit (E_GRP_UPDATE);
 			}
-			grp.gr_mem = add_list(grp.gr_mem, token);
-			token = strtok(NULL, ",");
+
+			grp.gr_mem = add_list(grp.gr_mem, u);
+#ifdef	SHADOWGRP
+			if (NULL != osgrp)
+				sgrp.sg_mem = add_list(sgrp.sg_mem, u);
+#endif				/* SHADOWGRP */
 		}
 	}
 
@@ -357,7 +375,7 @@ check_new_name(void)
 	/*
 	 * Make sure they are actually changing the name.
 	 */
-	if (strcmp (group_name, group_newname) == 0) {
+	if (streq(group_name, group_newname)) {
 		nflg = 0;
 		return;
 	}
@@ -485,7 +503,7 @@ static void close_files (void)
 
 #ifdef	SHADOWGRP
 	if (   is_shadow_grp
-	    && (pflg || nflg)) {
+	    && (pflg || nflg || user_list)) {
 		if (sgr_close () == 0) {
 			fprintf (stderr,
 			         _("%s: failure while writing changes to %s\n"),
@@ -617,7 +635,7 @@ static void prepare_failure_reports (void)
 	add_cleanup (cleanup_report_mod_group, &info_group);
 #ifdef	SHADOWGRP
 	if (   is_shadow_grp
-	    && (pflg || nflg)) {
+	    && (pflg || nflg || user_list)) {
 		add_cleanup (cleanup_report_mod_gshadow, &info_gshadow);
 	}
 #endif
@@ -644,7 +662,7 @@ static void lock_files (void)
 
 #ifdef	SHADOWGRP
 	if (   is_shadow_grp
-	    && (pflg || nflg)) {
+	    && (pflg || nflg || user_list)) {
 		if (sgr_lock () == 0) {
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
@@ -682,7 +700,7 @@ static void open_files (void)
 
 #ifdef	SHADOWGRP
 	if (   is_shadow_grp
-	    && (pflg || nflg)) {
+	    && (pflg || nflg || user_list)) {
 		if (sgr_open (O_CREAT | O_RDWR) == 0) {
 			fprintf (stderr,
 			         _("%s: cannot open %s\n"),

@@ -38,21 +38,22 @@
 #include "pam_defs.h"
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
-#include "prototypes.h"
+#include "chkname.h"
 #include "defines.h"
 #include "getdef.h"
 #include "groupio.h"
 #include "nscd.h"
-#include "sssd.h"
+#include "prototypes.h"
 #include "pwio.h"
 #include "sgroupio.h"
 #include "shadowio.h"
 #ifdef ENABLE_SUBIDS
 #include "subordinateio.h"
 #endif				/* ENABLE_SUBIDS */
-#include "chkname.h"
 #include "shadowlog.h"
+#include "sssd.h"
 #include "string/sprintf/snprintf.h"
+#include "string/strcmp/streq.h"
 #include "string/strdup/xstrdup.h"
 #include "string/strtok/stpsep.h"
 
@@ -281,7 +282,7 @@ static int add_group (const char *name, const char *gid, gid_t *ngid, uid_t uid)
 	/*
 	 * Now I have all of the fields required to create the new group.
 	 */
-	if (('\0' != gid[0]) && (!isdigit (gid[0]))) {
+	if (!streq(gid, "") && (!isdigit(gid[0]))) {
 		grent.gr_name = xstrdup (gid);
 	} else {
 		grent.gr_name = xstrdup (name);
@@ -354,7 +355,7 @@ static int get_user_id (const char *uid, uid_t *nuid) {
 			return -1;
 		}
 	} else {
-		if ('\0' != uid[0]) {
+		if (!streq(uid, "")) {
 			const struct passwd *pwd;
 			/* local, no need for xgetpwnam */
 			pwd = getpwnam (uid);
@@ -428,29 +429,29 @@ static int update_passwd (struct passwd *pwd, const char *password)
 	if (NULL != crypt_method) {
 #if defined(USE_SHA_CRYPT)
 		if (sflg) {
-			if (   (0 == strcmp (crypt_method, "SHA256"))
-				|| (0 == strcmp (crypt_method, "SHA512"))) {
+			if (   streq(crypt_method, "SHA256")
+				|| streq(crypt_method, "SHA512")) {
 				crypt_arg = &sha_rounds;
 			}
 		}
 #endif				/* USE_SHA_CRYPT */
 #if defined(USE_BCRYPT)
 		if (sflg) {
-			if (0 == strcmp (crypt_method, "BCRYPT")) {
+			if (streq(crypt_method, "BCRYPT")) {
 				crypt_arg = &bcrypt_rounds;
 			}
 		}
 #endif				/* USE_BCRYPT */
 #if defined(USE_YESCRYPT)
 		if (sflg) {
-			if (0 == strcmp (crypt_method, "YESCRYPT")) {
+			if (streq(crypt_method, "YESCRYPT")) {
 				crypt_arg = &yescrypt_cost;
 			}
 		}
 #endif				/* USE_YESCRYPT */
 	}
 
-	if ((NULL != crypt_method) && (0 == strcmp(crypt_method, "NONE"))) {
+	if ((NULL != crypt_method) && streq(crypt_method, "NONE")) {
 		pwd->pw_passwd = (char *)password;
 	} else {
 		const char *salt = crypt_make_salt (crypt_method, crypt_arg);
@@ -484,22 +485,23 @@ static int add_passwd (struct passwd *pwd, const char *password)
 	if (NULL != crypt_method) {
 #if defined(USE_SHA_CRYPT)
 		if (sflg) {
-			if (   (0 == strcmp (crypt_method, "SHA256"))
-				|| (0 == strcmp (crypt_method, "SHA512"))) {
+			if (streq(crypt_method, "SHA256")
+			    || streq(crypt_method, "SHA512"))
+			{
 				crypt_arg = &sha_rounds;
 			}
 		}
 #endif				/* USE_SHA_CRYPT */
 #if defined(USE_BCRYPT)
 		if (sflg) {
-			if (0 == strcmp (crypt_method, "BCRYPT")) {
+			if (streq(crypt_method, "BCRYPT")) {
 				crypt_arg = &bcrypt_rounds;
 			}
 		}
 #endif				/* USE_BCRYPT */
 #if defined(USE_YESCRYPT)
 		if (sflg) {
-			if (0 == strcmp (crypt_method, "YESCRYPT")) {
+			if (streq(crypt_method, "YESCRYPT")) {
 				crypt_arg = &yescrypt_cost;
 			}
 		}
@@ -525,7 +527,8 @@ static int add_passwd (struct passwd *pwd, const char *password)
 	if (NULL != sp) {
 		spent = *sp;
 		if (   (NULL != crypt_method)
-		    && (0 == strcmp(crypt_method, "NONE"))) {
+		    && streq(crypt_method, "NONE"))
+		{
 			spent.sp_pwdp = (char *)password;
 		} else {
 			const char *salt = crypt_make_salt (crypt_method,
@@ -554,7 +557,7 @@ static int add_passwd (struct passwd *pwd, const char *password)
 	 * when the entry was created, so this user would have to have had
 	 * the password set someplace else.
 	 */
-	if (strcmp (pwd->pw_passwd, "x") != 0) {
+	if (!streq(pwd->pw_passwd, "x")) {
 		return update_passwd (pwd, password);
 	}
 #else				/* USE_PAM */
@@ -565,7 +568,7 @@ static int add_passwd (struct passwd *pwd, const char *password)
 	 * The password will be updated later for all users using PAM.
 	 */
 	if (   (NULL != sp)
-	    || (strcmp (pwd->pw_passwd, "x") != 0)) {
+	    || !streq(pwd->pw_passwd, "x")) {
 		return 0;
 	}
 #endif				/* USE_PAM */
@@ -576,7 +579,7 @@ static int add_passwd (struct passwd *pwd, const char *password)
 	 */
 	spent.sp_namp = pwd->pw_name;
 #ifndef USE_PAM
-	if ((crypt_method != NULL) && (0 == strcmp(crypt_method, "NONE"))) {
+	if ((crypt_method != NULL) && streq(crypt_method, "NONE")) {
 		spent.sp_pwdp = (char *)password;
 	} else {
 		const char *salt = crypt_make_salt (crypt_method, crypt_arg);
@@ -682,19 +685,19 @@ static void process_flags (int argc, char **argv)
 				usage (EXIT_FAILURE);
 			}
 #if defined(USE_SHA_CRYPT)
-			if (  (   ((0 == strcmp (crypt_method, "SHA256")) || (0 == strcmp (crypt_method, "SHA512")))
+			if (  (   (streq(crypt_method, "SHA256") || streq(crypt_method, "SHA512"))
 			       && (-1 == str2sl(&sha_rounds, optarg)))) {
                             bad_s = 1;
                         }
 #endif				/* USE_SHA_CRYPT */
 #if defined(USE_BCRYPT)
-                        if ((   (0 == strcmp (crypt_method, "BCRYPT"))
+                        if ((   streq(crypt_method, "BCRYPT")
 			       && (-1 == str2sl(&bcrypt_rounds, optarg)))) {
                             bad_s = 1;
                         }
 #endif				/* USE_BCRYPT */
 #if defined(USE_YESCRYPT)
-                        if ((   (0 == strcmp (crypt_method, "YESCRYPT"))
+                        if ((   streq(crypt_method, "YESCRYPT")
 			       && (-1 == str2sl(&yescrypt_cost, optarg)))) {
                             bad_s = 1;
                         }
@@ -751,18 +754,18 @@ static void check_flags (void)
 #endif				/* USE_SHA_CRYPT || USE_BCRYPT || USE_YESCRYPT */
 
 	if (cflg) {
-		if (   (0 != strcmp (crypt_method, "DES"))
-		    && (0 != strcmp (crypt_method, "MD5"))
-		    && (0 != strcmp (crypt_method, "NONE"))
+		if (   !streq(crypt_method, "DES")
+		    && !streq(crypt_method, "MD5")
+		    && !streq(crypt_method, "NONE")
 #ifdef USE_SHA_CRYPT
-		    && (0 != strcmp (crypt_method, "SHA256"))
-		    && (0 != strcmp (crypt_method, "SHA512"))
+		    && !streq(crypt_method, "SHA256")
+		    && !streq(crypt_method, "SHA512")
 #endif				/* USE_SHA_CRYPT */
 #ifdef USE_BCRYPT
-		    && (0 != strcmp (crypt_method, "BCRYPT"))
+		    && !streq(crypt_method, "BCRYPT")
 #endif				/* USE_BCRYPT */
 #ifdef USE_YESCRYPT
-		    && (0 != strcmp (crypt_method, "YESCRYPT"))
+		    && !streq(crypt_method, "YESCRYPT")
 #endif				/* USE_YESCRYPT */
 		    ) {
 			fprintf (stderr,
@@ -1219,19 +1222,19 @@ int main (int argc, char **argv)
 			         Prog, line);
 			fail_exit (EXIT_FAILURE);
 		}
-		if ('\0' != fields[4][0]) {
+		if (!streq(fields[4], "")) {
 			newpw.pw_gecos = fields[4];
 		}
 
-		if ('\0' != fields[5][0]) {
+		if (!streq(fields[5], "")) {
 			newpw.pw_dir = fields[5];
 		}
 
-		if ('\0' != fields[6][0]) {
+		if (!streq(fields[6], "")) {
 			newpw.pw_shell = fields[6];
 		}
 
-		if (   ('\0' != fields[5][0])
+		if (   !streq(fields[5], "")
 		    && (access (newpw.pw_dir, F_OK) != 0)) {
 /* FIXME: should check for directory */
 			mode_t mode = getdef_num ("HOME_MODE",

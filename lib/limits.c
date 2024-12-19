@@ -37,6 +37,7 @@
 #include "atoi/str2i/str2u.h"
 #include "string/memset/memzero.h"
 #include "string/strchr/stpspn.h"
+#include "string/strcmp/streq.h"
 #include "typetraits.h"
 
 
@@ -194,7 +195,7 @@ static int do_user_limits (const char *buf, const char *name)
 	 * being ignored if a limit type is not known to the system.
 	 * Though, there will be complaining for unknown limit types.
 	 */
-	if (strcmp (pp, "-") == 0) {
+	if (streq(pp, "-")) {
 		/* Remember to extend this, too, when adding new limits!
 		 * Oh... but "unlimited" does not make sense for umask,
 		 * or does it? (K-)
@@ -202,7 +203,7 @@ static int do_user_limits (const char *buf, const char *name)
 		pp = "A- C- D- F- I- L- M- N- O- P- R- S- T- U-";
 	}
 
-	while ('\0' != *pp) {
+	while (!streq(pp, "")) {
 		switch (*pp++) {
 		case 'a':
 		case 'A':
@@ -395,10 +396,10 @@ static int setup_user_limits (const char *uname)
 		 */
 		if (sscanf (buf, "%s%[ACDFIKLMNOPRSTUacdfiklmnoprstu0-9 \t-]",
 		            name, tempbuf) == 2) {
-			if (strcmp (name, uname) == 0) {
+			if (streq(name, uname)) {
 				strcpy (limits, tempbuf);
 				break;
-			} else if (strcmp (name, "*") == 0) {
+			} else if (streq(name, "*")) {
 				strcpy (deflimits, tempbuf);
 			} else if (name[0] == '@') {
 				/* If the user is in the group, the group
@@ -412,9 +413,9 @@ static int setup_user_limits (const char *uname)
 		}
 	}
 	(void) fclose (fil);
-	if (limits[0] == '\0') {
+	if (streq(limits, "")) {
 		/* no user specific limits */
-		if (deflimits[0] == '\0') {	/* no default limits */
+		if (streq(deflimits, "")) {	/* no default limits */
 			return 0;
 		}
 		strcpy (limits, deflimits);	/* use the default limits */
@@ -436,7 +437,7 @@ static void setup_usergroups (const struct passwd *info)
 		/* local, no need for xgetgrgid */
 		grp = getgrgid (info->pw_gid);
 		if (   (NULL != grp)
-		    && (strcmp (info->pw_name, grp->gr_name) == 0)) {
+		    && streq(info->pw_name, grp->gr_name)) {
 			mode_t tmpmask;
 			tmpmask = umask (0777);
 			tmpmask = (tmpmask & ~070) | ((tmpmask >> 3) & 070);

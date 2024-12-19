@@ -20,6 +20,7 @@
 #include "prototypes.h"
 #include "string/strchr/stpspn.h"
 #include "string/strchr/strrspn.h"
+#include "string/strcmp/streq.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -44,11 +45,9 @@ static int isgrp (const char *, const char *);
 static int lines = 0;
 
 
-int check_su_auth (const char *actual_id,
-                   const char *wanted_id,
-                   bool su_to_root)
+int
+check_su_auth(const char *actual_id, const char *wanted_id, bool su_to_root)
 {
-	const char field[] = ":";
 	FILE *authfile_fd;
 	char temp[1024];
 	char *to_users;
@@ -87,13 +86,13 @@ int check_su_auth (const char *actual_id,
 		stpcpy(strrspn(temp, " \t"), "");
 
 		p = stpspn(temp, " \t");
-		if (*p == '#' || *p == '\0')
+		if (*p == '#' || streq(p, ""))
 			continue;
 
-		if (!(to_users = strtok(p, field))
-		    || !(from_users = strtok (NULL, field))
-		    || !(action = strtok (NULL, field))
-		    || strtok (NULL, field)) {
+		to_users = strsep(&p, ":");
+		from_users = strsep(&p, ":");
+		action = strsep(&p, ":");
+		if (action == NULL || p != NULL) {
 			SYSLOG ((LOG_ERR,
 				 "%s, line %d. Bad number of fields.\n",
 				 SUAUTHFILE, lines));
@@ -104,7 +103,7 @@ int check_su_auth (const char *actual_id,
 			continue;
 		if (!applies (actual_id, from_users))
 			continue;
-		if (!strcmp (action, "DENY")) {
+		if (streq(action, "DENY")) {
 			SYSLOG ((su_to_root ? LOG_WARN : LOG_NOTICE,
 				 "DENIED su from '%s' to '%s' (%s)\n",
 				 actual_id, wanted_id, SUAUTHFILE));
@@ -112,14 +111,14 @@ int check_su_auth (const char *actual_id,
 			       stderr);
 			fclose (authfile_fd);
 			return DENY;
-		} else if (!strcmp (action, "NOPASS")) {
+		} else if (streq(action, "NOPASS")) {
 			SYSLOG ((su_to_root ? LOG_NOTICE : LOG_INFO,
 				 "NO password asked for su from '%s' to '%s' (%s)\n",
 				 actual_id, wanted_id, SUAUTHFILE));
 			fputs (_("Password authentication bypassed.\n"),stderr);
 			fclose (authfile_fd);
 			return NOPWORD;
-		} else if (!strcmp (action, "OWNPASS")) {
+		} else if (streq(action, "OWNPASS")) {
 			SYSLOG ((su_to_root ? LOG_NOTICE : LOG_INFO,
 				 "su from '%s' to '%s': asking for user's own password (%s)\n",
 				 actual_id, wanted_id, SUAUTHFILE));
@@ -137,17 +136,16 @@ int check_su_auth (const char *actual_id,
 	return NOACTION;
 }
 
-static int applies (const char *single, char *list)
+static int
+applies(const char *single, char *list)
 {
-	const char split[] = ", ";
 	char *tok;
 
 	int state = 0;
 
-	for (tok = strtok (list, split); tok != NULL;
-	     tok = strtok (NULL, split)) {
+	while (NULL != (tok = strsep(&list, ", "))) {
 
-		if (!strcmp (tok, "ALL")) {
+		if (streq(tok, "ALL")) {
 			if (state != 0) {
 				SYSLOG ((LOG_ERR,
 					 "%s, line %d: ALL in bad place\n",
@@ -155,7 +153,7 @@ static int applies (const char *single, char *list)
 				return 0;
 			}
 			state = 1;
-		} else if (!strcmp (tok, "EXCEPT")) {
+		} else if (streq(tok, "EXCEPT")) {
 			if (state != 1) {
 				SYSLOG ((LOG_ERR,
 					 "%s, line %d: EXCEPT in bas place\n",
@@ -163,7 +161,7 @@ static int applies (const char *single, char *list)
 				return 0;
 			}
 			state = 2;
-		} else if (!strcmp (tok, "GROUP")) {
+		} else if (streq(tok, "GROUP")) {
 			if ((state != 0) && (state != 2)) {
 				SYSLOG ((LOG_ERR,
 					 "%s, line %d: GROUP in bad place\n",
@@ -174,7 +172,7 @@ static int applies (const char *single, char *list)
 		} else {
 			switch (state) {
 			case 0:	/* No control words yet */
-				if (!strcmp (tok, single))
+				if (streq(tok, single))
 					return 1;
 				break;
 			case 1:	/* An all */
@@ -183,7 +181,7 @@ static int applies (const char *single, char *list)
 					 SUAUTHFILE, lines));
 				return 0;
 			case 2:	/* All except */
-				if (!strcmp (tok, single))
+				if (streq(tok, single))
 					return 0;
 				break;
 			case 3:	/* Group */

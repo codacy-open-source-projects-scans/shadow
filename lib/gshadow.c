@@ -14,45 +14,40 @@
 
 #ident "$Id$"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "alloc/malloc.h"
 #include "alloc/realloc.h"
-#include "alloc/x/xrealloc.h"
+#include "alloc/x/xmalloc.h"
 #include "defines.h"
 #include "prototypes.h"
+#include "string/strchr/strchrcnt.h"
+#include "string/strcmp/streq.h"
 #include "string/strtok/stpsep.h"
 
 
 static /*@null@*/FILE *shadow;
-static /*@null@*//*@only@*/char **members = NULL;
-static size_t nmembers = 0;
-static /*@null@*//*@only@*/char **admins = NULL;
-static size_t nadmins = 0;
-static struct sgrp sgroup;
+static struct sgrp  sgroup = {};
 
 #define	FIELDS	4
 
 
-static /*@null@*/char **build_list (char *s, char **list[], size_t * nlist)
+static /*@null@*/char **
+build_list(char *s)
 {
-	char **ptr = *list;
-	size_t nelem = *nlist, size;
+	char    **l;
+	size_t  i;
 
-	while (s != NULL && *s != '\0') {
-		ptr = XREALLOC(*list, nelem + 1, char *);
-		ptr[nelem] = strsep(&s, ",");
-		nelem++;
-		*list = ptr;
-		*nlist = nelem;
-	}
+	l = XMALLOC(strchrcnt(s, ',') + 2, char *);
 
-	ptr = XREALLOC(*list, nelem + 1, char *);
-	ptr[nelem] = NULL;
-	*list = ptr;
+	for (i = 0; s != NULL && !streq(s, ""); i++)
+		l[i] = strsep(&s, ",");
 
-	return ptr;
+	l[i] = NULL;
+
+	return l;
 }
 
 void setsgent (void)
@@ -73,7 +68,8 @@ void endsgent (void)
 	shadow = NULL;
 }
 
-/*@observer@*//*@null@*/struct sgrp *sgetsgent (const char *string)
+/*@observer@*//*@null@*/struct sgrp *
+sgetsgent(const char *string)
 {
 	static char *sgrbuf = NULL;
 	static size_t sgrbuflen = 0;
@@ -85,9 +81,9 @@ void endsgent (void)
 
 	if (len > sgrbuflen) {
 		char *buf = REALLOC(sgrbuf, len, char);
-		if (NULL == buf) {
+		if (NULL == buf)
 			return NULL;
-		}
+
 		sgrbuf = buf;
 		sgrbuflen = len;
 	}
@@ -109,22 +105,16 @@ void endsgent (void)
 	 */
 
 	if (NULL != cp || i != FIELDS)
-		return 0;
+		return NULL;
 
 	sgroup.sg_name = fields[0];
 	sgroup.sg_passwd = fields[1];
-	if (0 != nadmins) {
-		nadmins = 0;
-		free (admins);
-		admins = NULL;
-	}
-	if (0 != nmembers) {
-		nmembers = 0;
-		free (members);
-		members = NULL;
-	}
-	sgroup.sg_adm = build_list (fields[2], &admins, &nadmins);
-	sgroup.sg_mem = build_list (fields[3], &members, &nmembers);
+
+	free(sgroup.sg_adm);
+	free(sgroup.sg_mem);
+
+	sgroup.sg_adm = build_list(fields[2]);
+	sgroup.sg_mem = build_list(fields[3]);
 
 	return &sgroup;
 }
@@ -155,29 +145,29 @@ void endsgent (void)
 		return NULL;
 	}
 
-	if (fgetsx(buf, buflen, fp) == buf) {
-		while (   (strrchr(buf, '\n') == NULL)
-		       && (feof (fp) == 0)) {
-			size_t len;
+	if (fgetsx(buf, buflen, fp) == NULL)
+		return NULL;
 
-			cp = REALLOC(buf, buflen * 2, char);
-			if (NULL == cp) {
-				return NULL;
-			}
-			buf = cp;
-			buflen *= 2;
+	while (   (strrchr(buf, '\n') == NULL)
+	       && (feof (fp) == 0)) {
+		size_t len;
 
-			len = strlen (buf);
-			if (fgetsx (&buf[len],
-			            (int) (buflen - len),
-			            fp) != &buf[len]) {
-				return NULL;
-			}
+		cp = REALLOC(buf, buflen * 2, char);
+		if (NULL == cp) {
+			return NULL;
 		}
-		stpsep(buf, "\n");
-		return (sgetsgent (buf));
+		buf = cp;
+		buflen *= 2;
+
+		len = strlen (buf);
+		if (fgetsx (&buf[len],
+			    (int) (buflen - len),
+			    fp) != &buf[len]) {
+			return NULL;
+		}
 	}
-	return NULL;
+	stpsep(buf, "\n");
+	return (sgetsgent (buf));
 }
 
 /*
@@ -203,7 +193,7 @@ void endsgent (void)
 	setsgent ();
 
 	while ((sgrp = getsgent ()) != NULL) {
-		if (strcmp (name, sgrp->sg_name) == 0) {
+		if (streq(name, sgrp->sg_name)) {
 			break;
 		}
 	}

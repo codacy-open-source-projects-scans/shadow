@@ -24,18 +24,19 @@
 #include "alloc/x/xmalloc.h"
 #include "attr.h"
 #include "defines.h"
+/*@-exitarg@*/
+#include "exitcodes.h"
 #include "groupio.h"
 #include "nscd.h"
-#include "sssd.h"
 #include "prototypes.h"
 #ifdef SHADOWGRP
 #include "sgroupio.h"
 #endif
-/*@-exitarg@*/
-#include "exitcodes.h"
 #include "shadowlog.h"
+#include "sssd.h"
 #include "string/memset/memzero.h"
 #include "string/sprintf/snprintf.h"
+#include "string/strcmp/streq.h"
 #include "string/strcpy/strtcpy.h"
 #include "string/strdup/xstrdup.h"
 
@@ -174,9 +175,11 @@ static void catch_signals (int killed)
 static bool is_valid_user_list (const char *users)
 {
 	bool is_valid = true;
-	/*@owned@*/char *tmpusers = xstrdup (users);
+	char  *dup, *tmpusers;
 
-	while (NULL != tmpusers && '\0' != *tmpusers) {
+	tmpusers = dup = xstrdup(users);
+
+	while (NULL != tmpusers && !streq(tmpusers, "")) {
 		const char  *u;
 
 		u = strsep(&tmpusers, ",");
@@ -193,7 +196,7 @@ static bool is_valid_user_list (const char *users)
 		}
 	}
 
-	free (tmpusers);
+	free(dup);
 
 	return is_valid;
 }
@@ -841,7 +844,7 @@ static void change_passwd (struct group *gr)
 			exit (1);
 		}
 
-		if (strcmp (pass, cp) == 0) {
+		if (streq(pass, cp)) {
 			erase_pass (cp);
 			break;
 		}

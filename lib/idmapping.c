@@ -12,19 +12,20 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
-
-#include "alloc/calloc.h"
-#include "alloc/x/xmalloc.h"
-#include "atoi/a2i/a2u.h"
-#include "prototypes.h"
-#include "string/sprintf/stpeprintf.h"
-#include "idmapping.h"
 #if HAVE_SYS_CAPABILITY_H
 #include <sys/prctl.h>
 #include <sys/capability.h>
 #endif
+
+#include "alloc/calloc.h"
+#include "alloc/x/xmalloc.h"
+#include "atoi/a2i/a2u.h"
+#include "idmapping.h"
+#include "prototypes.h"
 #include "shadowlog.h"
 #include "sizeof.h"
+#include "string/sprintf/stpeprintf.h"
+#include "string/strcmp/streq.h"
 
 
 struct map_range *
@@ -52,23 +53,19 @@ get_map_ranges(int ranges, int argc, char **argv)
 	/* Gather up the ranges from the command line */
 	m = mappings;
 	for (int i = 0; i < ranges * 3; i+=3, m++) {
-		if (a2ul(&m->upper, argv[i + 0], NULL, 0, 0, UINT_MAX) == -1) {
+		if (a2ul(&m->upper, argv[i + 0], NULL, 0, 0, UINT_MAX - 1) == -1) {
 			if (errno == ERANGE)
 				fprintf(log_get_logfd(), _( "%s: subuid overflow detected.\n"), log_get_progname());
 			free(mappings);
 			return NULL;
 		}
-		if (a2ul(&m->lower, argv[i + 1], NULL, 0, 0, UINT_MAX) == -1) {
+		if (a2ul(&m->lower, argv[i + 1], NULL, 0, 0, UINT_MAX - 1) == -1) {
 			if (errno == ERANGE)
 				fprintf(log_get_logfd(), _( "%s: subuid overflow detected.\n"), log_get_progname());
 			free(mappings);
 			return NULL;
 		}
-		if (a2ul(&m->count, argv[i + 2], NULL, 0, 0,
-		         MIN(MIN(UINT_MAX, ULONG_MAX - 1) - m->lower,
-		             MIN(UINT_MAX, ULONG_MAX - 1) - m->upper))
-		    == -1)
-		{
+		if (a2ul(&m->count, argv[i + 2], NULL, 0, 1, UINT_MAX - MAX(m->lower, m->upper)) == -1) {
 			if (errno == ERANGE)
 				fprintf(log_get_logfd(), _( "%s: subuid overflow detected.\n"), log_get_progname());
 			free(mappings);
@@ -137,9 +134,9 @@ void write_mapping(int proc_dir_fd, int ranges, const struct map_range *mappings
 	struct __user_cap_header_struct hdr = {_LINUX_CAPABILITY_VERSION_3, 0};
 	struct __user_cap_data_struct data[2] = {{0}};
 
-	if (strcmp(map_file, "uid_map") == 0) {
+	if (streq(map_file, "uid_map")) {
 		cap = CAP_SETUID;
-	} else if (strcmp(map_file, "gid_map") == 0) {
+	} else if (streq(map_file, "gid_map")) {
 		cap = CAP_SETGID;
 	} else {
 		fprintf(log_get_logfd(), _("%s: Invalid map file %s specified\n"), log_get_progname(), map_file);
