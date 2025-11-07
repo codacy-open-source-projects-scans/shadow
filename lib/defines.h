@@ -41,7 +41,7 @@
  * crypt(3), crypt_gensalt(3), and their
  * feature test macros may be defined in here.
  */
-#if HAVE_CRYPT_H
+#if __has_include(<crypt.h>)
 # include <crypt.h>
 #endif
 
@@ -50,35 +50,22 @@
 
 #include <dirent.h>
 
-/*
- * Possible cases:
- * - /usr/include/shadow.h exists and includes the shadow group stuff.
- * - /usr/include/shadow.h exists, but we use our own gshadow.h.
- */
 #include <shadow.h>
-#if defined(SHADOWGRP) && !defined(GSHADOW)
-#include "gshadow_.h"
-#endif
 
 #include <limits.h>
 
-#ifndef	NGROUPS_MAX
-#ifdef	NGROUPS
-#define	NGROUPS_MAX	NGROUPS
-#else
-#define	NGROUPS_MAX	64
+#ifndef PATH_MAX
+#define PATH_MAX 4096
 #endif
+
+#ifndef MAXHOSTNAMELEN
+#define MAXHOSTNAMELEN 64
 #endif
 
 #include <syslog.h>
 
 #ifndef LOG_WARN
 #define LOG_WARN LOG_WARNING
-#endif
-
-/* LOG_NOWAIT is deprecated */
-#ifndef LOG_NOWAIT
-#define LOG_NOWAIT 0
 #endif
 
 /* LOG_AUTH is deprecated, use LOG_AUTHPRIV instead */
@@ -120,7 +107,7 @@
    in just one place.  */
 
 #ifndef SYSLOG_OPTIONS
-/* #define SYSLOG_OPTIONS (LOG_PID | LOG_CONS | LOG_NOWAIT) */
+/* #define SYSLOG_OPTIONS (LOG_PID | LOG_CONS) */
 #define SYSLOG_OPTIONS (LOG_PID)
 #endif
 
@@ -157,22 +144,12 @@
 #define GROUP_FILE "/etc/group"
 #endif
 
-#ifndef SHADOW_FILE
-#define SHADOW_FILE "/etc/shadow"
-#endif
-
 #ifndef SUBUID_FILE
 #define SUBUID_FILE "/etc/subuid"
 #endif
 
 #ifndef SUBGID_FILE
 #define SUBGID_FILE "/etc/subgid"
-#endif
-
-#ifdef SHADOWGRP
-#ifndef SGROUP_FILE
-#define SGROUP_FILE "/etc/gshadow"
-#endif
 #endif
 
 /*

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id:$"
 
@@ -78,7 +78,7 @@ static int ni_conv (int num_msg,
 			break;
 		case PAM_TEXT_INFO:
 			if (   (NULL == msg[count]->msg)
-			    || (fprintf (stdout, "%s\n", msg[count]->msg) <0)) {
+			    || (printf("%s\n", msg[count]->msg) <0)) {
 				goto failed_conversation;
 			}
 			responses[count].resp = NULL;

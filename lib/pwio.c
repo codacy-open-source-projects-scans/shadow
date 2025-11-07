@@ -8,16 +8,18 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
-#ident "$Id$"
-
-#include "prototypes.h"
-#include "defines.h"
 #include <pwd.h>
 #include <stdio.h>
+
 #include "commonio.h"
+#include "defines.h"
+#include "fields.h"
+#include "prototypes.h"
 #include "pwio.h"
+#include "shadow/passwd/sgetpwent.h"
+
 
 static /*@null@*/ /*@only@*/void *passwd_dup (const void *ent)
 {
@@ -156,14 +158,14 @@ int pw_rewind (void)
 	return commonio_next (&passwd_db);
 }
 
-int pw_close (void)
+int pw_close (bool process_selinux)
 {
-	return commonio_close (&passwd_db);
+	return commonio_close (&passwd_db, process_selinux);
 }
 
-int pw_unlock (void)
+int pw_unlock (bool process_selinux)
 {
-	return commonio_unlock (&passwd_db);
+	return commonio_unlock (&passwd_db, process_selinux);
 }
 
 /*@null@*/struct commonio_entry *__pw_get_head (void)

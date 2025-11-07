@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -18,6 +18,7 @@
 #include "pwio.h"
 #include "getdef.h"
 #include "shadowlog.h"
+#include "string/strerrno.h"
 
 /*
  * get_ranges - Get the minimum and maximum ID ranges for the search
@@ -237,7 +238,7 @@ int find_new_uid(bool sys_user,
 	if (NULL == used_uids) {
 		fprintf (log_get_logfd(),
 			 _("%s: failed to allocate memory: %s\n"),
-			 log_get_progname(), strerror (errno));
+			 log_get_progname(), strerrno());
 		return -1;
 	}
 
@@ -245,7 +246,7 @@ int find_new_uid(bool sys_user,
 	(void) pw_rewind ();
 	highest_found = uid_min;
 	lowest_found = uid_max;
-	while ((pwd = pw_next ()) != NULL) {
+	while (NULL != (pwd = pw_next())) {
 		/*
 		 * Does this entry have a lower UID than the lowest we've found
 		 * so far?

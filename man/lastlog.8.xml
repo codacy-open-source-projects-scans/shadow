@@ -109,6 +109,7 @@
 	    directory and use the configuration files from the
 	    <replaceable>CHROOT_DIR</replaceable> directory.
 	    Only absolute paths are supported.
+      No SELINUX support.
 	  </para>
 	</listitem>
       </varlistentry>
@@ -149,6 +150,16 @@
 	    min and max values (<replaceable>UID_MIN-UID_MAX</replaceable>), a
 	    max value (<replaceable>-UID_MAX</replaceable>), or a min value
 	    (<replaceable>UID_MIN-</replaceable>).
+	  </para>
+	</listitem>
+      </varlistentry>
+      <varlistentry>
+	<term>
+	  <option>-a</option>
+	</term>
+	<listitem>
+	  <para>
+	    Print the lastlog records of the users that have logged in at least once. Excludes records for users with '**Never logged in**'.
 	  </para>
 	</listitem>
       </varlistentry>

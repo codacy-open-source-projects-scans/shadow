@@ -6,18 +6,19 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
 #include <assert.h>
 
-#include "alloc/x/xmalloc.h"
+#include "alloc/malloc.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "string/strchr/strchrcnt.h"
 #include "string/strcmp/streq.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strdup/strdup.h"
+#include "string/strtok/strsep2ls.h"
 
 
 /*
@@ -186,9 +187,7 @@ comma_to_list(const char *comma)
 {
 	char *members;
 	char **array;
-	int i;
-	char *cp;
-	char *cp2;
+	size_t  n;
 
 	assert (NULL != comma);
 
@@ -203,7 +202,8 @@ comma_to_list(const char *comma)
 	 * n: number of delimiters + last element + NULL
 	 */
 
-	array = XMALLOC(strchrcnt(members, ',') + 2, char *);
+	n = strchrcnt(members, ',') + 2;
+	array = XMALLOC(n, char *);
 
 	/*
 	 * Empty list is special - 0 members, not 1 empty member.  --marekm
@@ -215,18 +215,7 @@ comma_to_list(const char *comma)
 		return array;
 	}
 
-	/*
-	 * Now go walk that list all over again, this time building the
-	 * array of pointers.
-	 */
-
-	for (cp = members, i = 0; cp != NULL; i++)
-		array[i] = strsep(&cp, ",");
-	array[i] = NULL;
-
-	/*
-	 * Return the new array of pointers
-	 */
+	strsep2ls(members, ",", n, array);
 
 	return array;
 }

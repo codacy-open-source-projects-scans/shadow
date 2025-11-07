@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -12,13 +12,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
-#if HAVE_SYS_CAPABILITY_H
-#include <sys/prctl.h>
-#include <sys/capability.h>
+#if __has_include(<sys/capability.h>)
+# include <sys/capability.h>
+#endif
+#if __has_include(<sys/prctl.h>)
+# include <sys/prctl.h>
 #endif
 
 #include "alloc/calloc.h"
-#include "alloc/x/xmalloc.h"
+#include "alloc/malloc.h"
 #include "atoi/a2i/a2u.h"
 #include "idmapping.h"
 #include "prototypes.h"
@@ -26,6 +28,7 @@
 #include "sizeof.h"
 #include "string/sprintf/stpeprintf.h"
 #include "string/strcmp/streq.h"
+#include "string/strerrno.h"
 
 
 struct map_range *
@@ -86,7 +89,7 @@ get_map_ranges(int ranges, int argc, char **argv)
  */
 #define ULONG_DIGITS (((WIDTHOF(unsigned long) + 9)/10)*3)
 
-#if HAVE_SYS_CAPABILITY_H
+#if __has_include(<sys/capability.h>)
 static inline bool maps_lower_root(int cap, int ranges, const struct map_range *mappings)
 {
 	int idx;
@@ -129,7 +132,7 @@ void write_mapping(int proc_dir_fd, int ranges, const struct map_range *mappings
 	char *buf, *pos, *end;
 	int fd;
 
-#if HAVE_SYS_CAPABILITY_H
+#if __has_include(<sys/capability.h>)
 	int cap;
 	struct __user_cap_header_struct hdr = {_LINUX_CAPABILITY_VERSION_3, 0};
 	struct __user_cap_data_struct data[2] = {{0}};
@@ -194,17 +197,17 @@ void write_mapping(int proc_dir_fd, int ranges, const struct map_range *mappings
 	fd = openat(proc_dir_fd, map_file, O_WRONLY);
 	if (fd < 0) {
 		fprintf(log_get_logfd(), _("%s: open of %s failed: %s\n"),
-			log_get_progname(), map_file, strerror(errno));
+			log_get_progname(), map_file, strerrno());
 		exit(EXIT_FAILURE);
 	}
 	if (write_full(fd, buf, pos - buf) == -1) {
 		fprintf(log_get_logfd(), _("%s: write to %s failed: %s\n"),
-			log_get_progname(), map_file, strerror(errno));
+			log_get_progname(), map_file, strerrno());
 		exit(EXIT_FAILURE);
 	}
 	if (close(fd) != 0 && errno != EINTR) {
 		fprintf(log_get_logfd(), _("%s: closing %s failed: %s\n"),
-			log_get_progname(), map_file, strerror(errno));
+			log_get_progname(), map_file, strerrno());
 		exit(EXIT_FAILURE);
 	}
 	free(buf);

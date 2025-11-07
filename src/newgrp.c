@@ -1,13 +1,12 @@
-/*
- * SPDX-FileCopyrightText: 1990 - 1994, Julianne Frances Haugh
- * SPDX-FileCopyrightText: 1996 - 2000, Marek Michałkiewicz
- * SPDX-FileCopyrightText: 2001 - 2006, Tomasz Kłoczko
- * SPDX-FileCopyrightText: 2007 - 2008, Nicolas François
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
+// SPDX-FileCopyrightText: 1990-1994, Julianne Frances Haugh
+// SPDX-FileCopyrightText: 1996-2000, Marek Michałkiewicz
+// SPDX-FileCopyrightText: 2001-2006, Tomasz Kłoczko
+// SPDX-FileCopyrightText: 2007-2008, Nicolas François
+// SPDX-FileCopyrightText: 2024, Alejandro Colomar <alx@kernel.org>
+// SPDX-License-Identifier: BSD-3-Clause
 
-#include <config.h>
+
+#include "config.h"
 
 #ident "$Id$"
 
@@ -15,20 +14,31 @@
 #include <grp.h>
 #include <pwd.h>
 #include <stdio.h>
-#include <assert.h>
+#include <sys/types.h>
 
 #include "agetpass.h"
-#include "alloc/x/xmalloc.h"
+#include "alloc/malloc.h"
+#include "alloc/realloc.h"
 #include "chkname.h"
 #include "defines.h"
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "getdef.h"
 #include "prototypes.h"
+#include "search/l/lfind.h"
+#include "search/l/lsearch.h"
+#include "shadow/grp/agetgroups.h"
+#include "shadow/gshadow/endsgent.h"
+#include "shadow/gshadow/getsgnam.h"
+#include "shadow/gshadow/sgrp.h"
 #include "shadowlog.h"
 #include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strdup/strdup.h"
+#include "string/strerrno.h"
+
+#include <assert.h>
 
 
 /*
@@ -38,10 +48,8 @@ static const char *Prog;
 
 extern char **newenvp;
 
-#ifdef HAVE_SETGROUPS
-static int ngroups;
-static /*@null@*/ /*@only@*/GETGROUPS_T *grouplist;
-#endif
+static size_t  ngroups;
+static /*@null@*/ /*@only@*/gid_t  *gids;
 
 static bool is_newgrp;
 
@@ -93,7 +101,7 @@ static /*@null@*/struct group *find_matching_group (const char *name, struct gro
 		return gr;
 
 	setgrent ();
-	while ((gr = getgrent ()) != NULL) {
+	while (NULL != (gr = getgrent())) {
 		if (gr->gr_gid != gid) {
 			continue;
 		}
@@ -181,7 +189,7 @@ static void check_perms (const struct group *grp,
 		if (NULL == cpasswd) {
 			fprintf (stderr,
 			         _("%s: failed to crypt password with previous salt: %s\n"),
-			         Prog, strerror (errno));
+			        Prog, strerrno());
 			SYSLOG ((LOG_INFO,
 			         "Failed to crypt password with previous salt of group '%s'",
 			         groupname));
@@ -191,10 +199,10 @@ static void check_perms (const struct group *grp,
 		if (streq(grp->gr_passwd, "") ||
 		    !streq(grp->gr_passwd, cpasswd)) {
 #ifdef WITH_AUDIT
-			SNPRINTF(audit_buf, "authentication new-gid=%lu",
+			SNPRINTF(audit_buf, "authentication new_gid=%lu",
 			         (unsigned long) grp->gr_gid);
-			audit_logger (AUDIT_GRP_AUTH, Prog,
-			              audit_buf, NULL, getuid (), 0);
+			audit_logger (AUDIT_GRP_AUTH,
+			              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
 			SYSLOG ((LOG_INFO,
 				 "Invalid password for group '%s' from '%s'",
@@ -204,10 +212,10 @@ static void check_perms (const struct group *grp,
 			goto failure;
 		}
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "authentication new-gid=%lu",
+		SNPRINTF(audit_buf, "authentication new_gid=%lu",
 		         (unsigned long) grp->gr_gid);
-		audit_logger (AUDIT_GRP_AUTH, Prog,
-		              audit_buf, NULL, getuid (), 1);
+		audit_logger (AUDIT_GRP_AUTH,
+		              audit_buf, NULL, getuid (), SHADOW_AUDIT_SUCCESS);
 #endif
 	}
 
@@ -218,16 +226,6 @@ failure:
 	 * harm.  -- JWP
 	 */
 	closelog ();
-#ifdef WITH_AUDIT
-	if (groupname) {
-		SNPRINTF(audit_buf, "changing new-group=%s", groupname);
-		audit_logger (AUDIT_CHGRP_ID, Prog,
-		              audit_buf, NULL, getuid (), 0);
-	} else {
-		audit_logger (AUDIT_CHGRP_ID, Prog,
-		              "changing", NULL, getuid (), 0);
-	}
-#endif
 	exit (EXIT_FAILURE);
 }
 
@@ -257,9 +255,9 @@ static void syslog_sg (const char *name, const char *group)
 	}
 	if (tty == NULL) {
 		tty = "???";
-	} else if (strncmp (tty, "/dev/", 5) == 0) {
-		tty += 5;
 	}
+	tty = strprefix(tty, "/dev/") ?: tty;
+
 	SYSLOG ((LOG_INFO,
 		 "user '%s' (login '%s' on %s) switched to group '%s'",
 		 name, loginname, tty, group));
@@ -298,16 +296,16 @@ static void syslog_sg (const char *name, const char *group)
 		if ((pid_t)-1 == child) {
 			/* error in fork() */
 			fprintf (stderr, _("%s: failure forking: %s\n"),
-				 is_newgrp ? "newgrp" : "sg", strerror (errno));
+				is_newgrp ? "newgrp" : "sg", strerrno());
 #ifdef WITH_AUDIT
 			if (group) {
-				SNPRINTF(audit_buf,
-				         "changing new-group=%s", group);
-				audit_logger (AUDIT_CHGRP_ID, Prog,
-				              audit_buf, NULL, getuid (), 0);
+				audit_logger_with_group(AUDIT_CHGRP_ID, "changing", NULL,
+							getuid(), "new_group", group,
+							SHADOW_AUDIT_FAILURE);
 			} else {
-				audit_logger (AUDIT_CHGRP_ID, Prog,
-				              "changing", NULL, getuid (), 0);
+				audit_logger (AUDIT_CHGRP_ID,
+				              "changing", NULL, getuid(),
+				              SHADOW_AUDIT_FAILURE);
 			}
 #endif
 			exit (EXIT_FAILURE);
@@ -372,7 +370,6 @@ static void syslog_sg (const char *name, const char *group)
 int main (int argc, char **argv)
 {
 	bool initflag = false;
-	int i;
 	bool is_member = false;
 	bool cflag = false;
 	int err = 0;
@@ -445,8 +442,8 @@ int main (int argc, char **argv)
 		fprintf (stderr, _("%s: Cannot determine your user name.\n"),
 		         Prog);
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_CHGRP_ID, Prog,
-		              "changing", NULL, getuid (), 0);
+		audit_logger (AUDIT_CHGRP_ID,
+		              "changing", NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
 		SYSLOG ((LOG_WARN, "Cannot determine the user name of the caller (UID %lu)",
 		         (unsigned long) getuid ()));
@@ -518,7 +515,7 @@ int main (int argc, char **argv)
 		 * Do the command line for "newgrp". It's just making sure
 		 * there aren't any flags and getting the new group name.
 		 */
-		if ((argc > 0) && (argv[0][0] == '-')) {
+		if ((argc > 0) && strprefix(argv[0], "-")) {
 			usage ();
 			goto failure;
 		} else if (argv[0] != NULL) {
@@ -551,40 +548,26 @@ int main (int argc, char **argv)
 		}
 	}
 
-#ifdef HAVE_SETGROUPS
 	/*
 	 * get the current user's groupset. The new group will be added to
 	 * the concurrent groupset if there is room, otherwise you get a
 	 * nasty message but at least your real and effective group ids are
 	 * set.
 	 */
-	/* don't use getgroups(0, 0) - it doesn't work on some systems */
-	i = 16;
-	for (;;) {
-		grouplist = XMALLOC(i, GETGROUPS_T);
-		ngroups = getgroups (i, grouplist);
-		if (i > ngroups && !(ngroups == -1 && errno == EINVAL)) {
-			break;
-		}
-		/* not enough room, so try allocating a larger buffer */
-		free (grouplist);
-		i *= 2;
-	}
-	if (ngroups < 0) {
-		perror ("getgroups");
+	gids = agetgroups(&ngroups);
+	if (gids == NULL) {
+		perror("agetgroups");
 #ifdef WITH_AUDIT
 		if (group) {
-			SNPRINTF(audit_buf, "changing new-group=%s", group);
-			audit_logger (AUDIT_CHGRP_ID, Prog,
-			              audit_buf, NULL, getuid (), 0);
+			audit_logger_with_group(AUDIT_CHGRP_ID, "changing", NULL, getuid(),
+						"new_group", group, SHADOW_AUDIT_FAILURE);
 		} else {
-			audit_logger (AUDIT_CHGRP_ID, Prog,
-			              "changing", NULL, getuid (), 0);
+			audit_logger(AUDIT_CHGRP_ID,
+				     "changing", NULL, getuid(), SHADOW_AUDIT_FAILURE);
 		}
 #endif
-		exit (EXIT_FAILURE);
+		exit(EXIT_FAILURE);
 	}
-#endif				/* HAVE_SETGROUPS */
 
 	/*
 	 * now we put her in the new group. The password file entry for her
@@ -632,18 +615,12 @@ int main (int argc, char **argv)
 		goto failure;
 	}
 
-#ifdef HAVE_SETGROUPS
 	/* when using pam_group, she will not be listed in the groups
 	 * database. However getgroups() will return the group. So
 	 * if she is listed there already it is ok to grant membership.
 	 */
-	for (i = 0; i < ngroups; i++) {
-		if (grp->gr_gid == grouplist[i]) {
-			is_member = true;
-			break;
-		}
-	}
-#endif                          /* HAVE_SETGROUPS */
+	is_member = (LFIND(&grp->gr_gid, gids, ngroups) != NULL);
+
 	/*
 	 * For split groups (due to limitations of NIS), check all
 	 * groups of the same GID like the requested group for
@@ -688,29 +665,18 @@ int main (int argc, char **argv)
 
 	gid = grp->gr_gid;
 
-#ifdef HAVE_SETGROUPS
 	/*
 	 * I am going to try to add her new group id to her concurrent group
 	 * set. If the group id is already present I'll just skip this part.
 	 * If the group doesn't fit, I'll complain loudly and skip this
 	 * part.
 	 */
-	for (i = 0; i < ngroups; i++) {
-		if (gid == grouplist[i]) {
-			break;
-		}
-	}
-	if (i == ngroups) {
-		if (ngroups >= sysconf (_SC_NGROUPS_MAX)) {
-			(void) fputs (_("too many groups\n"), stderr);
-		} else {
-			grouplist[ngroups++] = gid;
-			if (setgroups (ngroups, grouplist) != 0) {
-				perror ("setgroups");
-			}
-		}
-	}
-#endif
+	gids = XREALLOC(gids, ngroups + 1, gid_t);
+
+	LSEARCH(&gid, gids, &ngroups);
+
+	if (setgroups(ngroups, gids) == -1)
+		perror("setgroups");
 
 	/*
 	 * Close all files before changing the user/group IDs.
@@ -733,9 +699,9 @@ int main (int argc, char **argv)
 	if (setgid (gid) != 0) {
 		perror ("setgid");
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "changing new-gid=%lu", (unsigned long) gid);
-		audit_logger (AUDIT_CHGRP_ID, Prog,
-		              audit_buf, NULL, getuid (), 0);
+		SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+		audit_logger (AUDIT_CHGRP_ID,
+		              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
 		exit (EXIT_FAILURE);
 	}
@@ -743,9 +709,9 @@ int main (int argc, char **argv)
 	if (setuid (getuid ()) != 0) {
 		perror ("setuid");
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "changing new-gid=%lu", (unsigned long) gid);
-		audit_logger (AUDIT_CHGRP_ID, Prog,
-		              audit_buf, NULL, getuid (), 0);
+		SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+		audit_logger (AUDIT_CHGRP_ID,
+		              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
 		exit (EXIT_FAILURE);
 	}
@@ -758,9 +724,9 @@ int main (int argc, char **argv)
 		closelog ();
 		execl (SHELL, "sh", "-c", command, (char *) NULL);
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "changing new-gid=%lu", (unsigned long) gid);
-		audit_logger (AUDIT_CHGRP_ID, Prog,
-		              audit_buf, NULL, getuid (), 0);
+		SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+		audit_logger (AUDIT_CHGRP_ID,
+		              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
 		perror (SHELL);
 		exit ((errno == ENOENT) ? E_CMD_NOTFOUND : E_CMD_NOEXEC);
@@ -808,11 +774,13 @@ int main (int argc, char **argv)
 		}
 
 		while (NULL != *envp) {
-			if (strncmp (*envp, "PATH=", 5) == 0 ||
-			    strncmp (*envp, "HOME=", 5) == 0 ||
-			    strncmp (*envp, "SHELL=", 6) == 0 ||
-			    strncmp (*envp, "TERM=", 5) == 0)
+			if (strprefix(*envp, "PATH=") ||
+			    strprefix(*envp, "HOME=") ||
+			    strprefix(*envp, "SHELL=") ||
+			    strprefix(*envp, "TERM="))
+			{
 				addenv (*envp, NULL);
+			}
 
 			envp++;
 		}
@@ -824,9 +792,9 @@ int main (int argc, char **argv)
 	}
 
 #ifdef WITH_AUDIT
-	SNPRINTF(audit_buf, "changing new-gid=%lu", (unsigned long) gid);
-	audit_logger (AUDIT_CHGRP_ID, Prog,
-	              audit_buf, NULL, getuid (), 1);
+	SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+	audit_logger (AUDIT_CHGRP_ID,
+	              audit_buf, NULL, getuid (), SHADOW_AUDIT_SUCCESS);
 #endif
 	/*
 	 * Exec the login shell and go away. We are trying to get back to
@@ -850,11 +818,11 @@ int main (int argc, char **argv)
 	closelog ();
 #ifdef WITH_AUDIT
 	if (NULL != group) {
-		SNPRINTF(audit_buf, "changing new-group=%s", group);
-		audit_logger (AUDIT_CHGRP_ID, Prog,
-		              audit_buf, NULL, getuid (), 0);
+		audit_logger_with_group(AUDIT_CHGRP_ID, "changing", NULL,
+					getuid(), "new_group", group,
+					SHADOW_AUDIT_FAILURE);
 	} else {
-		audit_logger (AUDIT_CHGRP_ID, Prog,
+		audit_logger (AUDIT_CHGRP_ID,
 		              "changing", NULL, getuid (), 0);
 	}
 #endif

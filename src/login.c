@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -21,11 +21,12 @@
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <assert.h>
 
-#include "alloc/x/xmalloc.h"
+#include "alloc/malloc.h"
 #include "attr.h"
 #include "chkname.h"
 #include "defines.h"
@@ -36,12 +37,16 @@
 #include "getdef.h"
 #include "prototypes.h"
 #include "pwauth.h"
+#include "shadow/gshadow/endsgent.h"
 #include "shadowlog.h"
 #include "string/memset/memzero.h"
 #include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strneq.h"
+#include "string/strcmp/strprefix.h"
 #include "string/strcpy/strtcpy.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strdup/strdup.h"
+#include "string/strerrno.h"
 #include "string/strftime.h"
 
 
@@ -61,14 +66,6 @@ static pam_handle_t *pamh = NULL;
 
 #endif				/* USE_PAM */
 
-#ifndef USE_PAM
-/*
- * Needed for MkLinux DR1/2/2.1 - J.
- */
-#ifndef LASTLOG_FILE
-#define LASTLOG_FILE "/var/log/lastlog"
-#endif
-#endif				/* !USE_PAM */
 
 /*
  * Global variables
@@ -77,7 +74,6 @@ static const char Prog[] = "login";
 
 static const char *hostname = "";
 static /*@null@*/ /*@only@*/char *username = NULL;
-static int reason = PW_LOGIN;
 
 #ifndef USE_PAM
 #ifdef ENABLE_LASTLOG
@@ -267,7 +263,7 @@ static void process_flags (int argc, char *const *argv)
 	 * clever telnet, and getty holes.
 	 */
 	for (arg = 1; arg < argc; arg++) {
-		if (argv[arg][0] == '-' && strlen (argv[arg]) > 2) {
+		if (strprefix(argv[arg], "-") && strlen(argv[arg]) > 2) {
 			usage ();
 		}
 		if (streq(argv[arg], "--")) {
@@ -289,7 +285,6 @@ static void process_flags (int argc, char *const *argv)
 		case 'h':
 			hflg = true;
 			hostname = optarg;
-			reason = PW_TELNET;
 			break;
 		case 'p':
 			pflg = true;
@@ -349,7 +344,7 @@ static void init_env (void)
 	else {
 		cp = getdef_str ("ENV_TZ");
 		if (NULL != cp) {
-			addenv (('/' == *cp) ? tz (cp) : cp, NULL);
+			addenv(strprefix(cp, "/") ? tz(cp) : cp, NULL);
 		}
 	}
 #endif				/* !USE_PAM */
@@ -456,6 +451,7 @@ int main (int argc, char **argv)
 	char           *host = NULL;
 	char           tty[BUFSIZ];
 	char           fromhost[512];
+	pid_t          initial_pid; /* the "session leader" PID */
 	const char     *failent_user;
 	const char     *tmptty;
 	const char     *cp;
@@ -504,7 +500,8 @@ int main (int argc, char **argv)
 		exit (1);	/* must be a terminal */
 	}
 
-	err = get_session_host(&host);
+	initial_pid = getpid();
+	err = get_session_host(&host, initial_pid);
 	/*
 	 * Be picky if run by normal users (possible if installed setuid
 	 * root), but not if run by root.
@@ -535,9 +532,6 @@ int main (int argc, char **argv)
 	}
 	if (fflg) {
 		preauth_flag = true;
-	}
-	if (hflg) {
-		reason = PW_RLOGIN;
 	}
 
 	OPENLOG (Prog);
@@ -860,8 +854,8 @@ int main (int argc, char **argv)
 			 * login, even if they have been
 			 * "pre-authenticated."
 			 */
-			if (   ('!' == user_passwd[0])
-			    || ('*' == user_passwd[0])) {
+			if (   strprefix(user_passwd, "!")
+			    || strprefix(user_passwd, "*")) {
 				failed = true;
 			}
 
@@ -903,7 +897,7 @@ int main (int argc, char **argv)
 			goto auth_ok;
 		}
 
-		if (pw_auth (user_passwd, username, reason, NULL) == 0) {
+		if (pw_auth(user_passwd, username) == 0) {
 			goto auth_ok;
 		}
 
@@ -947,7 +941,7 @@ int main (int argc, char **argv)
 			failure (pwd->pw_uid, tty, &faillog);
 		}
 #ifndef ENABLE_LOGIND
-		record_failure(failent_user, tty, hostname);
+		record_failure(failent_user, tty, hostname, initial_pid);
 #endif /* ENABLE_LOGIND */
 
 		retries--;
@@ -964,7 +958,7 @@ int main (int argc, char **argv)
 		 * all).  --marekm
 		 */
 		if (streq(user_passwd, "")) {
-			pw_auth ("!", username, reason, NULL);
+			pw_auth("!", username);
 		}
 
 		/*
@@ -1019,7 +1013,7 @@ int main (int argc, char **argv)
 		addenv ("IFS= \t\n", NULL);	/* ... instead, set a safe IFS */
 	}
 
-	if (pwd->pw_shell[0] == '*') {	/* subsystem root */
+	if (strprefix(pwd->pw_shell, "*")) {  /* subsystem root */
 		pwd->pw_shell++;	/* skip the '*' */
 		subsystem (pwd);	/* figure out what to execute */
 		subroot = true;	/* say I was here again */
@@ -1095,8 +1089,7 @@ int main (int argc, char **argv)
 	child = fork ();
 	if (child < 0) {
 		/* error in fork() */
-		fprintf (stderr, _("%s: failure forking: %s"),
-		         Prog, strerror (errno));
+		fprintf(stderr, _("%s: failure forking: %s"), Prog, strerrno());
 		PAM_END;
 		exit (0);
 	} else if (child != 0) {
@@ -1112,7 +1105,7 @@ int main (int argc, char **argv)
 #endif
 
 	/* If we were init, we need to start a new session */
-	if (getppid() == 1) {
+	if (1 == initial_pid) {
 		setsid();
 		if (ioctl(0, TIOCSCTTY, 1) != 0) {
 			fprintf (stderr, _("TIOCSCTTY failed on %s"), tty);
@@ -1124,7 +1117,7 @@ int main (int argc, char **argv)
 	 * The utmp entry needs to be updated to indicate the new status
 	 * of the session, the new PID and SID.
 	 */
-	err = update_utmp (username, tty, hostname);
+	err = update_utmp(username, tty, hostname, initial_pid);
 	if (err != 0) {
 		SYSLOG ((LOG_WARN, "Unable to update utmp entry for %s", username));
 	}
@@ -1180,7 +1173,9 @@ int main (int argc, char **argv)
 		 * this
 		 */
 #ifndef USE_PAM
-		motd ();	/* print the message of the day */
+		if (motd() == -1)
+			exit(EXIT_FAILURE);
+
 		if (   getdef_bool ("FAILLOG_ENAB")
 		    && (0 != faillog.fail_cnt)) {
 			failprint (&faillog);
@@ -1206,7 +1201,7 @@ int main (int argc, char **argv)
 			printf (_("Last login: %s on %s"),
 			        ptime, ll.ll_line);
 #ifdef HAVE_LL_HOST		/* __linux__ || SUN4 */
-			if ('\0' != ll.ll_host[0]) {
+			if (!STRNEQ(ll.ll_host, "")) {
 				printf (_(" from %.*s"),
 				        (int) sizeof ll.ll_host, ll.ll_host);
 			}

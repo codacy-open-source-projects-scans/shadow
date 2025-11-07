@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -17,6 +17,8 @@
 #include "prototypes.h"
 #include "defines.h"
 #include "shadowlog_internal.h"
+#include "string/strcmp/strprefix.h"
+
 
 /*@exposed@*//*@null@*/char *pw_encrypt (const char *clear, const char *salt)
 {
@@ -35,7 +37,7 @@
 
 	/* Some crypt() do not return NULL if the algorithm is not
 	 * supported, and return a DES encrypted password. */
-	if ((NULL != salt) && (salt[0] == '$') && (strlen (cp) <= 13))
+	if ((NULL != salt) && strprefix(salt, "$") && (strlen (cp) <= 13))
 	{
 		/*@observer@*/const char *method;
 		switch (salt[1])
@@ -65,7 +67,8 @@
 		(void) fprintf (shadow_logfd,
 		                _("crypt method not supported by libcrypt? (%s)\n"),
 		                method);
-		exit (EXIT_FAILURE);
+		errno = EINVAL;
+		return NULL;
 	}
 
 	if (strlen (cp) != 13) {

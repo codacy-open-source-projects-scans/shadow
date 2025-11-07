@@ -5,7 +5,12 @@
 #include "config.h"
 
 
-#if defined(__GNUC__)
+#if !defined(__has_c_attribute)
+# define __has_c_attribute(x)  0
+#endif
+
+
+#if (__GNUC__ >= 10)
 # define MAYBE_UNUSED                [[gnu::unused]]
 # define NORETURN                    [[gnu::__noreturn__]]
 # define format_attr(type, fmt, va)  [[gnu::format(type, fmt, va)]]
@@ -29,6 +34,12 @@
 # define ATTR_STRING(i)              [[gnu::null_terminated_string_arg(i)]]
 #else
 # define ATTR_STRING(i)
+#endif
+
+#if __has_c_attribute(gnu::nonstring)
+# define ATTR_NONSTRING              [[gnu::nonstring]]
+#else
+# define ATTR_NONSTRING
 #endif
 
 

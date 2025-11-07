@@ -7,59 +7,47 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
-#ident "$Id$"
+#include "fields.h"
 
 #include <ctype.h>
 #include <string.h>
 #include <stdio.h>
 
 #include "prototypes.h"
-#include "string/strchr/stpspn.h"
-#include "string/strchr/strrspn.h"
+#include "string/ctype/strisascii/strisprint.h"
+#include "string/ctype/strchrisascii/strchriscntrl.h"
 #include "string/strcmp/streq.h"
+#include "string/strspn/stpspn.h"
+#include "string/strspn/stprspn.h"
 #include "string/strtok/stpsep.h"
 
 
 /*
  * valid_field - insure that a field contains all legal characters
  *
- * The supplied field is scanned for non-printable and other illegal
- * characters.
- *  + -1 is returned if an illegal or control character is present.
- *  +  1 is returned if no illegal or control characters are present,
- *       but the field contains a non-printable character.
- *  +  0 is returned otherwise.
+ * Return:
+ *	-1	Illegal or control characters are present.
+ *	1	Non-ASCII characters are present.
+ *	0	All chatacters are legal and ASCII.
  */
-int valid_field (const char *field, const char *illegal)
+int
+valid_field_(const char *field, const char *illegal)
 {
-	const char *cp;
-	int err = 0;
-
-	if (NULL == field) {
+	if (NULL == field)
 		return -1;
-	}
 
-	/* For each character of field, search if it appears in the list
-	 * of illegal characters. */
-	if (illegal && NULL != strpbrk (field, illegal)) {
+	if (strpbrk(field, illegal))
 		return -1;
-	}
+	if (strchriscntrl(field))
+		return -1;
+	if (strisprint(field))
+		return 0;
+	if (streq(field, ""))
+		return 0;
 
-	/* Search if there are non-printable or control characters */
-	for (cp = field; !streq(cp, ""); cp++) {
-		unsigned char c = *cp;
-		if (!isprint (c)) {
-			err = 1;
-		}
-		if (iscntrl (c)) {
-			err = -1;
-			break;
-		}
-	}
-
-	return err;
+	return 1;  // !ASCII
 }
 
 /*
@@ -93,7 +81,7 @@ change_field(char *buf, size_t maxsize, const char *prompt)
 		 * makes it possible to change the field to empty, by
 		 * entering a space.  --marekm
 		 */
-		stpcpy(strrspn(newf, " \t"), "");
+		stpcpy(stprspn(newf, " \t"), "");
 		cp = stpspn(newf, " \t");
 		strcpy (buf, cp);
 	}

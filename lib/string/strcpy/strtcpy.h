@@ -6,7 +6,7 @@
 #define SHADOW_INCLUDE_LIB_STRING_STRCPY_STRTCPY_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -31,7 +31,7 @@
  *	at the buffer pointed to by dst.  If the destination buffer,
  *	isn't large enough to hold the copy, the resulting string is
  *	truncated.  The size of the buffer is calculated internally via
- *	NITEMS().
+ *	countof().
  *
  * RETURN VALUE
  *	-1	If this call truncated the resulting string.
@@ -44,7 +44,7 @@
  */
 
 
-#define STRTCPY(dst, src)  strtcpy(dst, src, NITEMS(dst))
+#define STRTCPY(dst, src)  strtcpy(dst, src, countof(dst))
 
 
 ATTR_STRING(2)

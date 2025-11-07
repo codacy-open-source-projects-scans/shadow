@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -37,8 +37,10 @@
 #ifdef	SHADOWGRP
 #include "sgroupio.h"
 #endif
+#include "shadow/gshadow/sgrp.h"
 #include "shadowlog.h"
 #include "string/memset/memzero.h"
+#include "string/strerrno.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -52,6 +54,14 @@
 #define E_GID_IN_USE	4	/* gid not unique (when -o not used) */
 #define E_NAME_IN_USE	9	/* group name not unique */
 #define E_GRP_UPDATE	10	/* can't update group file */
+
+/*
+ * Structures
+ */
+struct option_flags {
+	bool chroot;
+	bool prefix;
+};
 
 /*
  * Global variables
@@ -85,9 +95,9 @@ static void new_sgent (struct sgrp *sgent);
 #endif
 static void grp_update (void);
 static void check_new_name (void);
-static void close_files (void);
-static void open_files (void);
-static void process_flags (int argc, char **argv);
+static void close_files (struct option_flags *flags);
+static void open_files (struct option_flags *flags);
+static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (void);
 static void check_perms (void);
 
@@ -120,6 +130,15 @@ usage (int status)
 	exit (status);
 }
 
+static void fail_exit(int status)
+{
+#ifdef WITH_AUDIT
+	audit_logger(AUDIT_ADD_GROUP, "add-group", group_name,
+				 AUDIT_NO_ID, SHADOW_AUDIT_FAILURE);
+#endif
+	exit (status);
+}
+
 /*
  * new_grent - initialize the values in a group file entry
  *
@@ -149,7 +168,7 @@ static void new_grent (struct group *grent)
 static void new_sgent (struct sgrp *sgent)
 {
 	memzero (sgent, sizeof *sgent);
-	sgent->sg_name = group_name;
+	sgent->sg_namp = group_name;
 	if (pflg) {
 		sgent->sg_passwd = group_passwd;
 	} else {
@@ -222,7 +241,7 @@ grp_update(void)
 		fprintf (stderr,
 		         _("%s: failed to prepare the new %s entry '%s'\n"),
 		         Prog, gr_dbname (), grp.gr_name);
-		exit (E_GRP_UPDATE);
+		fail_exit (E_GRP_UPDATE);
 	}
 #ifdef	SHADOWGRP
 	/*
@@ -231,8 +250,8 @@ grp_update(void)
 	if (is_shadow_grp && (sgr_update (&sgrp) == 0)) {
 		fprintf (stderr,
 		         _("%s: failed to prepare the new %s entry '%s'\n"),
-		         Prog, sgr_dbname (), sgrp.sg_name);
-		exit (E_GRP_UPDATE);
+		         Prog, sgr_dbname (), sgrp.sg_namp);
+		fail_exit (E_GRP_UPDATE);
 	}
 #endif				/* SHADOWGRP */
 }
@@ -250,7 +269,7 @@ check_new_name(void)
 		fprintf(stderr, _("%s: '%s' is not a valid group name\n"),
 			Prog, group_name);
 
-		exit(E_BAD_ARG);
+		fail_exit (E_BAD_ARG);
 	}
 
 	return;
@@ -262,55 +281,55 @@ check_new_name(void)
  *	close_files() closes all of the files that were opened for this new
  *	group. This causes any modified entries to be written out.
  */
-static void close_files (void)
+static void close_files (struct option_flags *flags)
 {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
+
 	/* First, write the changes in the regular group database */
-	if (gr_close () == 0) {
+	if (gr_close (process_selinux) == 0) {
 		fprintf (stderr,
 		         _("%s: failure while writing changes to %s\n"),
 		         Prog, gr_dbname ());
-		exit (E_GRP_UPDATE);
+		fail_exit (E_GRP_UPDATE);
 	}
 #ifdef WITH_AUDIT
-	audit_logger (AUDIT_ADD_GROUP, Prog,
-	              "adding group to /etc/group",
+	audit_logger (AUDIT_ADD_GROUP,
+	              "add-group",
 	              group_name, group_id, SHADOW_AUDIT_SUCCESS);
 #endif
 	SYSLOG ((LOG_INFO, "group added to %s: name=%s, GID=%u",
 	         gr_dbname (), group_name, (unsigned int) group_id));
 	del_cleanup (cleanup_report_add_group_group);
 
-	cleanup_unlock_group (NULL);
+	cleanup_unlock_group (&process_selinux);
 	del_cleanup (cleanup_unlock_group);
 
 	/* Now, write the changes in the shadow database */
 #ifdef	SHADOWGRP
 	if (is_shadow_grp) {
-		if (sgr_close () == 0) {
+		if (sgr_close (process_selinux) == 0) {
 			fprintf (stderr,
 			         _("%s: failure while writing changes to %s\n"),
 			         Prog, sgr_dbname ());
-			exit (E_GRP_UPDATE);
+			fail_exit (E_GRP_UPDATE);
 		}
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_ADD_GROUP, Prog,
-		              "adding group to /etc/gshadow",
+		audit_logger (AUDIT_GRP_MGMT,
+		              "add-shadow-group",
 		              group_name, group_id, SHADOW_AUDIT_SUCCESS);
 #endif
 		SYSLOG ((LOG_INFO, "group added to %s: name=%s",
 		         sgr_dbname (), group_name));
 		del_cleanup (cleanup_report_add_group_gshadow);
 
-		cleanup_unlock_gshadow (NULL);
+		cleanup_unlock_gshadow (&process_selinux);
 		del_cleanup (cleanup_unlock_gshadow);
 	}
 #endif				/* SHADOWGRP */
 
 	/* Report success at the system level */
-#ifdef WITH_AUDIT
-	audit_logger (AUDIT_ADD_GROUP, Prog,
-	              "", group_name, group_id, SHADOW_AUDIT_SUCCESS);
-#endif
 	SYSLOG ((LOG_INFO, "new group: name=%s, GID=%u",
 	         group_name, (unsigned int) group_id));
 	del_cleanup (cleanup_report_add_group);
@@ -321,16 +340,20 @@ static void close_files (void)
  *
  *	open_files() opens the two group files.
  */
-static void open_files (void)
+static void open_files (struct option_flags *flags)
 {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
+
 	/* First, lock the databases */
 	if (gr_lock () == 0) {
 		fprintf (stderr,
 		         _("%s: cannot lock %s; try again later.\n"),
 		         Prog, gr_dbname ());
-		exit (E_GRP_UPDATE);
+		fail_exit (E_GRP_UPDATE);
 	}
-	add_cleanup (cleanup_unlock_group, NULL);
+	add_cleanup (cleanup_unlock_group, &process_selinux);
 
 #ifdef	SHADOWGRP
 	if (is_shadow_grp) {
@@ -338,9 +361,9 @@ static void open_files (void)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, sgr_dbname ());
-			exit (E_GRP_UPDATE);
+			fail_exit (E_GRP_UPDATE);
 		}
-		add_cleanup (cleanup_unlock_gshadow, NULL);
+		add_cleanup (cleanup_unlock_gshadow, &process_selinux);
 	}
 #endif				/* SHADOWGRP */
 
@@ -352,9 +375,9 @@ static void open_files (void)
 
 	/* And now open the databases */
 	if (gr_open (O_CREAT | O_RDWR) == 0) {
-		fprintf (stderr, _("%s: cannot open %s: %s\n"), Prog, gr_dbname (), strerror(errno));
-		SYSLOG ((LOG_WARN, "cannot open %s: %s", gr_dbname (), strerror(errno)));
-		exit (E_GRP_UPDATE);
+		fprintf(stderr, _("%s: cannot open %s: %s\n"), Prog, gr_dbname(), strerrno());
+		SYSLOG((LOG_WARN, "cannot open %s: %s", gr_dbname(), strerrno()));
+		fail_exit (E_GRP_UPDATE);
 	}
 
 #ifdef	SHADOWGRP
@@ -362,9 +385,9 @@ static void open_files (void)
 		if (sgr_open (O_CREAT | O_RDWR) == 0) {
 			fprintf (stderr,
 			         _("%s: cannot open %s: %s\n"),
-			         Prog, sgr_dbname (), strerror(errno));
-			SYSLOG ((LOG_WARN, "cannot open %s: %s", sgr_dbname (), strerror(errno)));
-			exit (E_GRP_UPDATE);
+			         Prog, sgr_dbname(), strerrno());
+			SYSLOG((LOG_WARN, "cannot open %s: %s", sgr_dbname(), strerrno()));
+			fail_exit (E_GRP_UPDATE);
 		}
 	}
 #endif				/* SHADOWGRP */
@@ -375,7 +398,7 @@ static void open_files (void)
  *
  *	It will not return if an error is encountered.
  */
-static void process_flags (int argc, char **argv)
+static void process_flags (int argc, char **argv, struct option_flags *flags)
 {
 	/*
 	 * Parse the command line options.
@@ -450,8 +473,10 @@ static void process_flags (int argc, char **argv)
 			rflg = true;
 			break;
 		case 'R': /* no-op, handled in process_root_flag () */
+			flags->chroot = true;
 			break;
 		case 'P': /* no-op, handled in process_prefix_flag () */
+			flags->prefix = true;
 			break;
 		case 'U':
 			user_list = optarg;
@@ -499,7 +524,7 @@ static void check_flags (void)
 		fprintf (stderr,
 		         _("%s: group '%s' already exists\n"),
 		         Prog, group_name);
-		exit (E_NAME_IN_USE);
+		fail_exit (E_NAME_IN_USE);
 	}
 
 	if (gflg && (prefix_getgrgid (group_id) != NULL)) {
@@ -518,7 +543,7 @@ static void check_flags (void)
 			fprintf (stderr,
 			         _("%s: GID '%lu' already exists\n"),
 			         Prog, (unsigned long) group_id);
-			exit (E_GID_IN_USE);
+			fail_exit (E_GID_IN_USE);
 		}
 	}
 }
@@ -546,7 +571,7 @@ static void check_perms (void)
 		fprintf (stderr,
 		         _("%s: Cannot determine your user name.\n"),
 		         Prog);
-		exit (1);
+		fail_exit (1);
 	}
 
 	retval = pam_start (Prog, pampw->pw_name, &conv, &pamh);
@@ -566,7 +591,7 @@ static void check_perms (void)
 		if (NULL != pamh) {
 			(void) pam_end (pamh, retval);
 		}
-		exit (1);
+		fail_exit (1);
 	}
 	(void) pam_end (pamh, retval);
 #endif				/* USE_PAM */
@@ -578,6 +603,8 @@ static void check_perms (void)
  */
 int main (int argc, char **argv)
 {
+	struct option_flags flags;
+
 	log_set_progname(Prog);
 	log_set_logfd(stderr);
 
@@ -597,13 +624,13 @@ int main (int argc, char **argv)
 		fprintf (stderr,
 		         _("%s: Cannot setup cleanup service.\n"),
 		         Prog);
-		exit (1);
+		fail_exit (1);
 	}
 
 	/*
 	 * Parse the command line options.
 	 */
-	process_flags (argc, argv);
+	process_flags (argc, argv, &flags);
 
 	check_perms ();
 
@@ -620,16 +647,16 @@ int main (int argc, char **argv)
 	 * Do the hard stuff - open the files, create the group entries,
 	 * then close and update the files.
 	 */
-	open_files ();
+	open_files (&flags);
 
 	if (!gflg) {
 		if (find_new_gid (rflg, &group_id, NULL) < 0) {
-			exit (E_GID_IN_USE);
+			fail_exit (E_GID_IN_USE);
 		}
 	}
 
 	grp_update ();
-	close_files ();
+	close_files (&flags);
 	if (run_parts ("/etc/shadow-maint/groupadd-post.d", group_name,
 			Prog)) {
 		exit(1);

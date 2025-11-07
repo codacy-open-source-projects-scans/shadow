@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id: $"
 
@@ -29,6 +29,8 @@
 #include "shadowlog.h"
 #include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strneq.h"
+#include "string/strcmp/strprefix.h"
 
 
 #ifdef __linux__
@@ -64,14 +66,14 @@ user_busy_utmp(const char *name)
 	struct utmpx  *utent;
 
 	setutxent();
-	while ((utent = getutxent()) != NULL)
+	while (NULL != (utent = getutxent()))
 	{
 		if (utent->ut_type != USER_PROCESS) {
 			continue;
 		}
-		if (strncmp (utent->ut_user, name, sizeof utent->ut_user) != 0) {
+		if (!STRNEQ(utent->ut_user, name))
 			continue;
-		}
+
 		if (kill (utent->ut_pid, 0) != 0) {
 			continue;
 		}
@@ -126,7 +128,7 @@ static int check_status (const char *name, const char *sname, uid_t uid)
 		return 0;
 	}
 	while (fgets (line, sizeof (line), sfile) == line) {
-		if (strncmp (line, "Uid:\t", 5) == 0) {
+		if (strprefix(line, "Uid:\t")) {
 			unsigned long ruid, euid, suid;
 
 			assert (uid == (unsigned long) uid);
@@ -179,7 +181,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 	if (proc == NULL) {
 		perror ("opendir /proc");
 #ifdef ENABLE_SUBIDS
-		sub_uid_close();
+		sub_uid_close(true);
 #endif
 		return 0;
 	}
@@ -187,12 +189,12 @@ static int user_busy_processes (const char *name, uid_t uid)
 		perror ("stat (\"/\")");
 		(void) closedir (proc);
 #ifdef ENABLE_SUBIDS
-		sub_uid_close();
+		sub_uid_close(true);
 #endif
 		return 0;
 	}
 
-	while ((ent = readdir (proc)) != NULL) {
+	while (NULL != (ent = readdir(proc))) {
 		tmp_d_name = ent->d_name;
 		/*
 		 * Ingo Molnar's patch introducing NPTL for 2.4 hides
@@ -204,9 +206,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 		    || streq(tmp_d_name, "..")) {
 			continue;
 		}
-		if (*tmp_d_name == '.') {
-			tmp_d_name++;
-		}
+		tmp_d_name = strprefix(tmp_d_name, ".") ?: tmp_d_name;
 
 		/* Check if this is a valid PID */
 		if (get_pid(tmp_d_name, &pid) == -1) {
@@ -226,7 +226,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 		if (check_status (name, tmp_d_name, uid) != 0) {
 			(void) closedir (proc);
 #ifdef ENABLE_SUBIDS
-			sub_uid_close();
+			sub_uid_close(true);
 #endif
 			fprintf (log_get_logfd(),
 			         _("%s: user %s is currently used by process %d\n"),
@@ -237,7 +237,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 		SNPRINTF(task_path, "/proc/%lu/task", (unsigned long) pid);
 		task_dir = opendir (task_path);
 		if (task_dir != NULL) {
-			while ((ent = readdir (task_dir)) != NULL) {
+			while (NULL != (ent = readdir(task_dir))) {
 				pid_t tid;
 				if (get_pid(ent->d_name, &tid) == -1) {
 					continue;
@@ -249,7 +249,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 					(void) closedir (proc);
 					(void) closedir (task_dir);
 #ifdef ENABLE_SUBIDS
-					sub_uid_close();
+					sub_uid_close(true);
 #endif
 					fprintf (log_get_logfd(),
 					         _("%s: user %s is currently used by process %d\n"),
@@ -265,7 +265,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 
 	(void) closedir (proc);
 #ifdef ENABLE_SUBIDS
-	sub_uid_close();
+	sub_uid_close(true);
 #endif				/* ENABLE_SUBIDS */
 	return 0;
 }

@@ -6,7 +6,7 @@
 #define SHADOW_INCLUDE_LIB_STRING_STRCPY_STPECPY_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -32,7 +32,7 @@ inline char *stpecpy(char *dst, char *end, const char *restrict src);
  *
  *	end	Pointer to one after the last element of the buffer
  *		pointed to by `dst`.  Usually, it should be calculated
- *		as `dst + NITEMS(dst)`.
+ *		as `dst + countof(dst)`.
  *
  *	src	Source string to be copied into dst.
  *

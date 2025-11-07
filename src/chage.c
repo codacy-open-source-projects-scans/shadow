@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -19,15 +19,11 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <time.h>
-#ifdef ACCT_TOOLS_SETUID
-#ifdef USE_PAM
-#include "pam_defs.h"
-#endif				/* USE_PAM */
-#endif				/* ACCT_TOOLS_SETUID */
 #include <pwd.h>
 
 #include "atoi/a2i/a2s.h"
 #include "defines.h"
+#include "fields.h"
 #include "prototypes.h"
 #include "pwio.h"
 #include "shadowio.h"
@@ -36,7 +32,8 @@
 #include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
 #include "string/strcpy/strtcpy.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strdup/strdup.h"
+#include "string/strerrno.h"
 #include "string/strftime.h"
 #include "time/day_to_str.h"
 /*@-exitarg@*/
@@ -46,6 +43,10 @@
 #include "tcbfuncs.h"
 #endif
 
+struct option_flags {
+	bool chroot;
+	bool prefix;
+};
 
 /*
  * Global variables
@@ -83,29 +84,29 @@ NORETURN static void usage (int status);
 static int new_fields (void);
 static void print_day_as_date (long day);
 static void list_fields (void);
-static void process_flags (int argc, char **argv);
+static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (int argc, int opt_index);
-static void check_perms (void);
-static void open_files (bool readonly);
-static void close_files (void);
-NORETURN static void fail_exit (int code);
+static void check_perms (struct option_flags *flags);
+static void open_files (bool readonly, struct option_flags *flags);
+static void close_files (struct option_flags *flags);
+NORETURN static void fail_exit (int code, bool process_selinux);
 
 /*
  * fail_exit - do some cleanup and exit with the given error code
  */
 NORETURN
 static void
-fail_exit (int code)
+fail_exit (int code, bool process_selinux)
 {
 	if (spw_locked) {
-		if (spw_unlock () == 0) {
+		if (spw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, spw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
 			/* continue */
 		}
 	}
 	if (pw_locked) {
-		if (pw_unlock () == 0) {
+		if (pw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 			/* continue */
@@ -115,8 +116,8 @@ fail_exit (int code)
 
 #ifdef WITH_AUDIT
 	if (E_SUCCESS != code) {
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "change age", user_name, user_uid, 0);
+		audit_logger (AUDIT_USER_MGMT,
+		              "change-age", user_name, user_uid, SHADOW_AUDIT_FAILURE);
 	}
 #endif
 
@@ -243,7 +244,7 @@ print_day_as_date(long day)
 		return;
 	}
 
-	if (localtime_r(&date, &tm) == NULL) {
+	if (gmtime_r(&date, &tm) == NULL) {
 		puts(_("future"));
 		return;
 	}
@@ -342,7 +343,7 @@ static void list_fields (void)
  *
  *	It will not return if an error is encountered.
  */
-static void process_flags (int argc, char **argv)
+static void process_flags (int argc, char **argv, struct option_flags *flags)
 {
 	/*
 	 * Parse the command line options.
@@ -423,8 +424,10 @@ static void process_flags (int argc, char **argv)
 			}
 			break;
 		case 'R': /* no-op, handled in process_root_flag () */
+			flags->chroot = true;
 			break;
 		case 'P': /* no-op, handled in process_prefix_flag () */
+			flags->prefix = true;
 			break;
 		case 'W':
 			Wflg = true;
@@ -474,22 +477,13 @@ static void check_flags (int argc, int opt_index)
  *	(we will later make sure that the user is only listing her aging
  *	information)
  *
- *	With PAM support, the setuid bit can be set on chage to allow
- *	non-root users to groups.
- *	Without PAM support, only users who can write in the group databases
- *	can add groups.
- *
  *	It will not return if the user is not allowed.
  */
-static void check_perms (void)
+static void check_perms (struct option_flags *flags)
 {
-#ifdef ACCT_TOOLS_SETUID
-#ifdef USE_PAM
-	pam_handle_t *pamh = NULL;
-	struct passwd *pampw;
-	int retval;
-#endif				/* USE_PAM */
-#endif				/* ACCT_TOOLS_SETUID */
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
 
 	/*
 	 * An unprivileged user can ask for their own aging information, but
@@ -499,41 +493,8 @@ static void check_perms (void)
 
 	if (!amroot && !lflg) {
 		fprintf (stderr, _("%s: Permission denied.\n"), Prog);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
-
-#ifdef ACCT_TOOLS_SETUID
-#ifdef USE_PAM
-	pampw = getpwuid (getuid ()); /* local, no need for xgetpwuid */
-	if (NULL == pampw) {
-		fprintf (stderr,
-		         _("%s: Cannot determine your user name.\n"),
-		         Prog);
-		exit (E_NOPERM);
-	}
-
-	retval = pam_start (Prog, pampw->pw_name, &conv, &pamh);
-
-	if (PAM_SUCCESS == retval) {
-		retval = pam_authenticate (pamh, 0);
-	}
-
-	if (PAM_SUCCESS == retval) {
-		retval = pam_acct_mgmt (pamh, 0);
-	}
-
-	if (PAM_SUCCESS != retval) {
-		fprintf (stderr, _("%s: PAM: %s\n"),
-		         Prog, pam_strerror (pamh, retval));
-		SYSLOG((LOG_ERR, "%s", pam_strerror (pamh, retval)));
-		if (NULL != pamh) {
-			(void) pam_end (pamh, retval);
-		}
-		fail_exit (E_NOPERM);
-	}
-	(void) pam_end (pamh, retval);
-#endif				/* USE_PAM */
-#endif				/* ACCT_TOOLS_SETUID */
 }
 
 /*
@@ -542,8 +503,12 @@ static void check_perms (void)
  *	In read-only mode, the databases are not locked and are opened
  *	only for reading.
  */
-static void open_files (bool readonly)
+static void open_files (bool readonly, struct option_flags *flags)
 {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
+
 	/*
 	 * Lock and open the password file. This loads all of the password
 	 * file entries into memory. Then we get a pointer to the password
@@ -554,14 +519,14 @@ static void open_files (bool readonly)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, pw_dbname ());
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
 		pw_locked = true;
 	}
 	if (pw_open (readonly ? O_RDONLY: O_CREAT | O_RDWR) == 0) {
 		fprintf (stderr, _("%s: cannot open %s\n"), Prog, pw_dbname ());
 		SYSLOG ((LOG_WARN, "cannot open %s", pw_dbname ()));
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 	/*
@@ -575,7 +540,7 @@ static void open_files (bool readonly)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, spw_dbname ());
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
 		spw_locked = true;
 	}
@@ -583,42 +548,46 @@ static void open_files (bool readonly)
 		fprintf (stderr,
 		         _("%s: cannot open %s\n"), Prog, spw_dbname ());
 		SYSLOG ((LOG_WARN, "cannot open %s", spw_dbname ()));
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 }
 
 /*
  * close_files - close and unlock the password/shadow databases
  */
-static void close_files (void)
+static void close_files (struct option_flags *flags)
 {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
+
 	/*
 	 * Now close the shadow password file, which will cause all of the
 	 * entries to be re-written.
 	 */
-	if (spw_close () == 0) {
+	if (spw_close (process_selinux) == 0) {
 		fprintf (stderr,
 		         _("%s: failure while writing changes to %s\n"), Prog, spw_dbname ());
 		SYSLOG ((LOG_ERR, "failure while writing changes to %s", spw_dbname ()));
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 	/*
 	 * Close the password file. If any entries were modified, the file
 	 * will be re-written.
 	 */
-	if (pw_close () == 0) {
+	if (pw_close (process_selinux) == 0) {
 		fprintf (stderr, _("%s: failure while writing changes to %s\n"), Prog, pw_dbname ());
 		SYSLOG ((LOG_ERR, "failure while writing changes to %s", pw_dbname ()));
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
-	if (spw_unlock () == 0) {
+	if (spw_unlock (process_selinux) == 0) {
 		fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, spw_dbname ());
 		SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
 		/* continue */
 	}
 	spw_locked = false;
-	if (pw_unlock () == 0) {
+	if (pw_unlock (process_selinux) == 0) {
 		fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
 		SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 		/* continue */
@@ -632,7 +601,8 @@ static void close_files (void)
  *	It will not return in case of error
  */
 static void update_age (/*@null@*/const struct spwd *sp,
-                        /*@notnull@*/const struct passwd *pw)
+                        /*@notnull@*/const struct passwd *pw,
+                        bool process_selinux)
 {
 	struct spwd spwent;
 
@@ -653,7 +623,7 @@ static void update_age (/*@null@*/const struct spwd *sp,
 		if (pw_update (&pwent) == 0) {
 			fprintf (stderr,
 			         _("%s: failed to prepare the new %s entry '%s'\n"), Prog, pw_dbname (), pwent.pw_name);
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
 	} else {
 		spwent.sp_namp = xstrdup (sp->sp_namp);
@@ -676,7 +646,7 @@ static void update_age (/*@null@*/const struct spwd *sp,
 	if (spw_update (&spwent) == 0) {
 		fprintf (stderr,
 		         _("%s: failed to prepare the new %s entry '%s'\n"), Prog, spw_dbname (), spwent.sp_namp);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 }
@@ -762,6 +732,8 @@ int main (int argc, char **argv)
 	uid_t ruid;
 	gid_t rgid;
 	const struct passwd *pw;
+	struct option_flags  flags;
+	bool process_selinux;
 
 	sanitize_env ();
 	check_fds ();
@@ -790,9 +762,10 @@ int main (int argc, char **argv)
 	}
 #endif
 
-	process_flags (argc, argv);
+	process_flags (argc, argv, &flags);
+	process_selinux = !flags.chroot && !flags.prefix;
 
-	check_perms ();
+	check_perms (&flags);
 
 	if (!spw_file_present ()) {
 		fprintf (stderr,
@@ -803,13 +776,13 @@ int main (int argc, char **argv)
 		exit (E_SHADOW_NOTFOUND);
 	}
 
-	open_files (lflg);
+	open_files (lflg, &flags);
 	/* Drop privileges */
 	if (lflg && (   (setregid (rgid, rgid) != 0)
 	             || (setreuid (ruid, ruid) != 0))) {
 		fprintf (stderr, _("%s: failed to drop privileges (%s)\n"),
-		         Prog, strerror (errno));
-		fail_exit (E_NOPERM);
+		         Prog, strerrno());
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 	pw = pw_locate (argv[optind]);
@@ -817,13 +790,13 @@ int main (int argc, char **argv)
 		fprintf (stderr, _("%s: user '%s' does not exist in %s\n"),
 		         Prog, argv[optind], pw_dbname ());
 		closelog ();
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 	STRTCPY(user_name, pw->pw_name);
 #ifdef WITH_TCB
 	if (shadowtcb_set_user (pw->pw_name) == SHADOWTCB_FAILURE) {
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 #endif
 	user_uid = pw->pw_uid;
@@ -838,14 +811,11 @@ int main (int argc, char **argv)
 	if (lflg) {
 		if (!amroot && (ruid != user_uid)) {
 			fprintf (stderr, _("%s: Permission denied.\n"), Prog);
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
-#ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "display aging info", user_name, user_uid, 1);
-#endif
+		/* Displaying fields is not of interest to audit */
 		list_fields ();
-		fail_exit (E_SUCCESS);
+		fail_exit (E_SUCCESS, process_selinux);
 	}
 
 	/*
@@ -858,51 +828,51 @@ int main (int argc, char **argv)
 		if (new_fields () == 0) {
 			fprintf (stderr, _("%s: error changing fields\n"),
 			         Prog);
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
 #ifdef WITH_AUDIT
 		else {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "change all aging information",
-			              user_name, user_uid, 1);
+			audit_logger (AUDIT_USER_MGMT,
+			              "change-all-aging-information",
+			              user_name, user_uid, SHADOW_AUDIT_SUCCESS);
 		}
 #endif
 	} else {
 #ifdef WITH_AUDIT
 		if (Mflg) {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "change max age", user_name, user_uid, 1);
+			audit_logger (AUDIT_USER_MGMT,
+			              "change-max-age", user_name, user_uid, SHADOW_AUDIT_SUCCESS);
 		}
 		if (mflg) {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "change min age", user_name, user_uid, 1);
+			audit_logger (AUDIT_USER_MGMT,
+			              "change-min-age", user_name, user_uid, 1);
 		}
 		if (dflg) {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "change last change date",
+			audit_logger (AUDIT_USER_MGMT,
+			              "change-last-change-date",
 			              user_name, user_uid, 1);
 		}
 		if (Wflg) {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "change passwd warning",
+			audit_logger (AUDIT_USER_MGMT,
+			              "change-passwd-warning",
 			              user_name, user_uid, 1);
 		}
 		if (Iflg) {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "change inactive days",
+			audit_logger (AUDIT_USER_MGMT,
+			              "change-inactive-days",
 			              user_name, user_uid, 1);
 		}
 		if (Eflg) {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "change passwd expiration",
+			audit_logger (AUDIT_USER_MGMT,
+			              "change-passwd-expiration",
 			              user_name, user_uid, 1);
 		}
 #endif
 	}
 
-	update_age (sp, pw);
+	update_age (sp, pw, process_selinux);
 
-	close_files ();
+	close_files (&flags);
 
 	SYSLOG ((LOG_INFO, "changed password expiry for %s", user_name));
 

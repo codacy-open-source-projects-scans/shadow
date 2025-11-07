@@ -6,7 +6,7 @@
 #define SHADOW_INCLUDE_LIB_STRING_SPRINTF_SNPRINTF_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -18,7 +18,7 @@
 
 #define SNPRINTF(s, fmt, ...)                                                 \
 (                                                                             \
-	snprintf_(s, NITEMS(s), fmt __VA_OPT__(,) __VA_ARGS__)                \
+	snprintf_(s, countof(s), fmt __VA_OPT__(,) __VA_ARGS__)               \
 )
 
 

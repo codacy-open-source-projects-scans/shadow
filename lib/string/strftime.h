@@ -6,14 +6,15 @@
 #define SHADOW_INCLUDE_LIB_STRFTIME_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <time.h>
 
 #include "sizeof.h"
 
 
-#define STRFTIME(dst, fmt, tm)  strftime(dst, NITEMS(dst), fmt, tm)
+// string format time
+#define STRFTIME(dst, fmt, tm)  strftime(dst, countof(dst), fmt, tm)
 
 
 #endif  // include guard

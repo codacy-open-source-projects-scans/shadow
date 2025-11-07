@@ -5,6 +5,7 @@
       fedora: registry.fedoraproject.org/fedora:latest
       alpine: docker.io/library/alpine:latest
       debian: docker.io/library/debian:latest
+      opensuse: docker.io/opensuse/tumbleweed:latest
 
   roles:
     - role: build_container
@@ -15,3 +16,8 @@
   gather_facts: false
   roles:
     - role: ci_run
+
+- name: Run system tests
+  hosts: localhost
+  roles:
+    - role: run_system_tests

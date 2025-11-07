@@ -6,13 +6,14 @@
 #define SHADOW_INCLUDE_LIB_STRING_STRCHR_STRNUL_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <string.h>
 
 #include "attr.h"
 
 
+// string null-byte
 // Similar to strlen(3), but return a pointer instead of an offset.
 #define strnul(s)                                                             \
 ({                                                                            \

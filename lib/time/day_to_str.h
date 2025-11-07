@@ -7,7 +7,7 @@
 #define SHADOW_INCLUDE_LIB_TIME_DAY_TO_STR_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <time.h>
 
@@ -16,7 +16,7 @@
 #include "string/strcpy/strtcpy.h"
 
 
-#define DAY_TO_STR(str, day)   day_to_str(NITEMS(str), str, day)
+#define DAY_TO_STR(str, day)   day_to_str(countof(str), str, day)
 
 
 inline void day_to_str(size_t size, char buf[size], long day);
@@ -38,7 +38,7 @@ day_to_str(size_t size, char buf[size], long day)
 		return;
 	}
 
-	if (localtime_r(&date, &tm) == NULL) {
+	if (gmtime_r(&date, &tm) == NULL) {
 		strtcpy(buf, "future", size);
 		return;
 	}

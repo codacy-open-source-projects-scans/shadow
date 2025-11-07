@@ -6,14 +6,14 @@
 #define SHADOW_INCLUDE_LIB_FS_READLINK_AREADLINK_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <errno.h>
-#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 
+#include "defines.h"
 #include "alloc/malloc.h"
 #include "attr.h"
 #include "fs/readlink/readlinknul.h"

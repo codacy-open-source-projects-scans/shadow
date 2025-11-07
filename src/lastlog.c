@@ -7,12 +7,13 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
 #include <getopt.h>
 #include <lastlog.h>
+#include <paths.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -23,24 +24,18 @@
 #include <net/if.h>
 #endif
 
-#include "atoi/str2i/str2u.h"
+#include "atoi/str2i.h"
 #include "defines.h"
 #include "prototypes.h"
 #include "getdef.h"
 /*@-exitarg@*/
 #include "exitcodes.h"
 #include "shadowlog.h"
+#include "sizeof.h"
 #include "string/memset/memzero.h"
+#include "string/strerrno.h"
 #include "string/strftime.h"
 
-
-
-/*
- * Needed for MkLinux DR1/2/2.1 - J.
- */
-#ifndef LASTLOG_FILE
-#define LASTLOG_FILE "/var/log/lastlog"
-#endif
 
 /*
  * Global variables
@@ -116,7 +111,7 @@ static void print_one (/*@null@*/const struct passwd *pw)
 
 
 	offset = (off_t) pw->pw_uid * sizeof (ll);
-	if (offset + sizeof (ll) <= statbuf.st_size) {
+	if (offset + ssizeof(ll) <= statbuf.st_size) {
 		/* fseeko errors are not really relevant for us. */
 		int err = fseeko (lastlogfile, offset, SEEK_SET);
 		assert (0 == err);
@@ -236,14 +231,14 @@ static void update_one (/*@null@*/const struct passwd *pw)
 #endif
 		strcpy (ll.ll_line, "lastlog");
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_ACCT_UNLOCK, Prog,
+		audit_logger (AUDIT_ACCT_UNLOCK,
 			"clearing-lastlog",
 			pw->pw_name, pw->pw_uid, SHADOW_AUDIT_SUCCESS);
 #endif
 	}
 #ifdef WITH_AUDIT
 	else {
-		audit_logger (AUDIT_ACCT_UNLOCK, Prog,
+		audit_logger (AUDIT_ACCT_UNLOCK,
 			"refreshing-lastlog",
 			pw->pw_name, pw->pw_uid, SHADOW_AUDIT_SUCCESS);
 	}
@@ -432,9 +427,9 @@ int main (int argc, char **argv)
 		}
 	}
 
-	lastlogfile = fopen (LASTLOG_FILE, (Cflg || Sflg)?"r+":"r");
+	lastlogfile = fopen(_PATH_LASTLOG, (Cflg || Sflg)?"r+":"r");
 	if (NULL == lastlogfile) {
-		perror (LASTLOG_FILE);
+		perror(_PATH_LASTLOG);
 		exit (EXIT_FAILURE);
 	}
 
@@ -442,7 +437,7 @@ int main (int argc, char **argv)
 	if (fstat (fileno (lastlogfile), &statbuf) != 0) {
 		fprintf (stderr,
 		         _("%s: Cannot get the size of %s: %s\n"),
-		         Prog, LASTLOG_FILE, strerror (errno));
+		        Prog, _PATH_LASTLOG, strerrno());
 		exit (EXIT_FAILURE);
 	}
 

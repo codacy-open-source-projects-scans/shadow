@@ -7,13 +7,14 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
 #include <fcntl.h>
 #include <getopt.h>
 #include <pwd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -22,7 +23,7 @@
 #include "pam_defs.h"
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
-#include "atoi/str2i/str2s.h"
+#include "atoi/str2i.h"
 #include "defines.h"
 #include "nscd.h"
 #include "sssd.h"
@@ -33,10 +34,18 @@
 #endif
 /*@-exitarg@*/
 #include "exitcodes.h"
+#include "shadow/gshadow/sgrp.h"
 #include "shadowlog.h"
 #include "string/strcmp/streq.h"
+#include "string/strerrno.h"
 #include "string/strtok/stpsep.h"
 
+/*
+ * Structures
+ */
+struct option_flags {
+	bool chroot;
+};
 
 /*
  * Global variables
@@ -67,21 +76,21 @@ static bool sgr_locked = false;
 static bool gr_locked = false;
 
 /* local function prototypes */
-NORETURN static void fail_exit (int code);
+NORETURN static void fail_exit (int code, bool process_selinux);
 NORETURN static void usage (int status);
-static void process_flags (int argc, char **argv);
+static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (void);
 static void check_perms (void);
-static void open_files (void);
-static void close_files (void);
+static void open_files (bool process_selinux);
+static void close_files (struct option_flags *flags);
 
 /*
  * fail_exit - exit with a failure code after unlocking the files
  */
-static void fail_exit (int code)
+static void fail_exit (int code, bool process_selinux)
 {
 	if (gr_locked) {
-		if (gr_unlock () == 0) {
+		if (gr_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, gr_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", gr_dbname ()));
 			/* continue */
@@ -90,7 +99,7 @@ static void fail_exit (int code)
 
 #ifdef	SHADOWGRP
 	if (sgr_locked) {
-		if (sgr_unlock () == 0) {
+		if (sgr_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, sgr_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", sgr_dbname ()));
 			/* continue */
@@ -148,7 +157,7 @@ usage (int status)
  *
  *	It will not return if an error is encountered.
  */
-static void process_flags (int argc, char **argv)
+static void process_flags (int argc, char **argv, struct option_flags *flags)
 {
 	int c;
 #if defined(USE_SHA_CRYPT) || defined(USE_BCRYPT) || defined(USE_YESCRYPT)
@@ -186,6 +195,7 @@ static void process_flags (int argc, char **argv)
 			md5flg = true;
 			break;
 		case 'R': /* no-op, handled in process_root_flag () */
+			flags->chroot = true;
 			break;
 #if defined(USE_SHA_CRYPT) || defined(USE_BCRYPT) || defined(USE_YESCRYPT)
 		case 's':
@@ -335,7 +345,7 @@ static void check_perms (void)
 /*
  * open_files - lock and open the group databases
  */
-static void open_files (void)
+static void open_files (bool process_selinux)
 {
 	/*
 	 * Lock the group file and open it for reading and writing. This will
@@ -345,13 +355,13 @@ static void open_files (void)
 		fprintf (stderr,
 		         _("%s: cannot lock %s; try again later.\n"),
 		         Prog, gr_dbname ());
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
 	gr_locked = true;
 	if (gr_open (O_CREAT | O_RDWR) == 0) {
 		fprintf (stderr,
 		         _("%s: cannot open %s\n"), Prog, gr_dbname ());
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
 
 #ifdef SHADOWGRP
@@ -361,13 +371,13 @@ static void open_files (void)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, sgr_dbname ());
-			fail_exit (1);
+			fail_exit (1, process_selinux);
 		}
 		sgr_locked = true;
 		if (sgr_open (O_CREAT | O_RDWR) == 0) {
 			fprintf (stderr, _("%s: cannot open %s\n"),
 			         Prog, sgr_dbname ());
-			fail_exit (1);
+			fail_exit (1, process_selinux);
 		}
 	}
 #endif
@@ -376,18 +386,21 @@ static void open_files (void)
 /*
  * close_files - close and unlock the group databases
  */
-static void close_files (void)
+static void close_files (struct option_flags *flags)
 {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot;
 #ifdef SHADOWGRP
 	if (is_shadow_grp) {
-		if (sgr_close () == 0) {
+		if (sgr_close (process_selinux) == 0) {
 			fprintf (stderr,
 			         _("%s: failure while writing changes to %s\n"),
 			         Prog, sgr_dbname ());
 			SYSLOG ((LOG_ERR, "failure while writing changes to %s", sgr_dbname ()));
-			fail_exit (1);
+			fail_exit (1, process_selinux);
 		}
-		if (sgr_unlock () == 0) {
+		if (sgr_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, sgr_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", sgr_dbname ()));
 			/* continue */
@@ -396,14 +409,14 @@ static void close_files (void)
 	}
 #endif
 
-	if (gr_close () == 0) {
+	if (gr_close (process_selinux) == 0) {
 		fprintf (stderr,
 		         _("%s: failure while writing changes to %s\n"),
 		         Prog, gr_dbname ());
 		SYSLOG ((LOG_ERR, "failure while writing changes to %s", gr_dbname ()));
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
-	if (gr_unlock () == 0) {
+	if (gr_unlock (process_selinux) == 0) {
 		fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, gr_dbname ());
 		SYSLOG ((LOG_ERR, "failed to unlock %s", gr_dbname ()));
 		/* continue */
@@ -425,8 +438,10 @@ int main (int argc, char **argv)
 
 	const struct group *gr;
 	struct group newgr;
-	int errors = 0;
-	int line = 0;
+	bool errors = false;
+	intmax_t line = 0;
+	struct option_flags  flags;
+	bool process_selinux;
 
 	log_set_progname(Prog);
 	log_set_logfd(stderr);
@@ -443,7 +458,8 @@ int main (int argc, char **argv)
 
 	process_root_flag ("-R", argc, argv);
 
-	process_flags (argc, argv);
+	process_flags (argc, argv, &flags);
+	process_selinux = !flags.chroot;
 
 	OPENLOG (Prog);
 
@@ -453,7 +469,7 @@ int main (int argc, char **argv)
 	is_shadow_grp = sgr_file_present ();
 #endif
 
-	open_files ();
+	open_files (process_selinux);
 
 	/*
 	 * Read each line, separating the group name from the password. The
@@ -463,9 +479,9 @@ int main (int argc, char **argv)
 	while (fgets (buf, (int) sizeof buf, stdin) != NULL) {
 		line++;
 		if (stpsep(buf, "\n") == NULL) {
-			fprintf (stderr, _("%s: line %d: line too long\n"),
+			fprintf (stderr, _("%s: line %jd: line too long\n"),
 			         Prog, line);
-			errors++;
+			errors = true;
 			continue;
 		}
 
@@ -482,9 +498,9 @@ int main (int argc, char **argv)
 		cp = stpsep(name, ":");
 		if (cp == NULL) {
 			fprintf (stderr,
-			         _("%s: line %d: missing new password\n"),
+			         _("%s: line %jd: missing new password\n"),
 			         Prog, line);
-			errors++;
+			errors = true;
 			continue;
 		}
 		newpwd = cp;
@@ -521,8 +537,8 @@ int main (int argc, char **argv)
 			if (NULL == cp) {
 				fprintf (stderr,
 				         _("%s: failed to crypt password with salt '%s': %s\n"),
-				         Prog, salt, strerror (errno));
-				fail_exit (1);
+				        Prog, salt, strerrno());
+				fail_exit (1, process_selinux);
 			}
 		}
 
@@ -533,9 +549,9 @@ int main (int argc, char **argv)
 		gr = gr_locate (name);
 		if (NULL == gr) {
 			fprintf (stderr,
-			         _("%s: line %d: group '%s' does not exist\n"), Prog,
+			         _("%s: line %jd: group '%s' does not exist\n"), Prog,
 			         line, name);
-			errors++;
+			errors = true;
 			continue;
 		}
 #ifdef SHADOWGRP
@@ -556,7 +572,7 @@ int main (int argc, char **argv)
 				 * group, but there are no entries in
 				 * gshadow, create one.
 				 */
-				newsg.sg_name   = name;
+				newsg.sg_namp   = name;
 				/* newsg.sg_passwd = NULL; will be set later */
 				newsg.sg_adm    = &empty;
 				newsg.sg_mem    = dup_list (gr->gr_mem);
@@ -593,9 +609,9 @@ int main (int argc, char **argv)
 		if (NULL != sg) {
 			if (sgr_update (&newsg) == 0) {
 				fprintf (stderr,
-				         _("%s: line %d: failed to prepare the new %s entry '%s'\n"),
-				         Prog, line, sgr_dbname (), newsg.sg_name);
-				errors++;
+				         _("%s: line %jd: failed to prepare the new %s entry '%s'\n"),
+				         Prog, line, sgr_dbname (), newsg.sg_namp);
+				errors = true;
 				continue;
 			}
 		}
@@ -605,9 +621,9 @@ int main (int argc, char **argv)
 		{
 			if (gr_update (&newgr) == 0) {
 				fprintf (stderr,
-				         _("%s: line %d: failed to prepare the new %s entry '%s'\n"),
+				         _("%s: line %jd: failed to prepare the new %s entry '%s'\n"),
 				         Prog, line, gr_dbname (), newgr.gr_name);
-				errors++;
+				errors = true;
 				continue;
 			}
 		}
@@ -620,13 +636,13 @@ int main (int argc, char **argv)
 	 * changes to be written out all at once, and then unlocked
 	 * afterwards.
 	 */
-	if (0 != errors) {
+	if (errors) {
 		fprintf (stderr,
 		         _("%s: error detected, changes ignored\n"), Prog);
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
 
-	close_files ();
+	close_files (&flags);
 
 	nscd_flush_cache ("group");
 	sssd_flush_cache (SSSD_DB_GROUP);

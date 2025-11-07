@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -18,6 +18,8 @@
 #include "groupio.h"
 #include "getdef.h"
 #include "shadowlog.h"
+#include "string/strerrno.h"
+
 
 /*
  * get_ranges - Get the minimum and maximum ID ranges for the search
@@ -237,7 +239,7 @@ int find_new_gid (bool sys_group,
 	if (NULL == used_gids) {
 		fprintf (log_get_logfd(),
 			 _("%s: failed to allocate memory: %s\n"),
-			 log_get_progname(), strerror (errno));
+			 log_get_progname(), strerrno());
 		return -1;
 	}
 
@@ -245,7 +247,7 @@ int find_new_gid (bool sys_group,
 	(void) gr_rewind ();
 	highest_found = gid_min;
 	lowest_found = gid_max;
-	while ((grp = gr_next ()) != NULL) {
+	while (NULL != (grp = gr_next())) {
 		/*
 		 * Does this entry have a lower GID than the lowest we've found
 		 * so far?

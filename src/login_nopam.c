@@ -23,7 +23,7 @@
 ************************************************************************/
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include "config.h"
 #endif
 
 #ifndef USE_PAM
@@ -47,6 +47,7 @@
 #include <pwd.h>
 #endif
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,10 +57,13 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#include "defines.h"
 #include "prototypes.h"
 #include "sizeof.h"
-#include "string/strchr/strrspn.h"
+#include "string/strcmp/strcaseeq.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strspn/stprspn.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -68,9 +72,9 @@
 #define TABLE	"/etc/login.access"
 #endif
 
-static bool list_match (char *list, const char *item, bool (*match_fn) (const char *, const char *));
-static bool user_match (const char *tok, const char *string);
-static bool from_match (const char *tok, const char *string);
+static bool list_match (char *list, const char *item, bool (*match_fn) (char *, const char *));
+static bool user_match (char *tok, const char *string);
+static bool from_match (char *tok, const char *string);
 static bool string_match (const char *tok, const char *string);
 static const char *resolve_hostname (const char *string);
 
@@ -94,7 +98,7 @@ login_access(const char *user, const char *from)
 	 */
 	fp = fopen (TABLE, "r");
 	if (NULL != fp) {
-		int lineno = 0;	/* for diagnostics */
+		intmax_t lineno = 0;	/* for diagnostics */
 		while (   !match
 		       && (fgets (line, sizeof (line), fp) == line))
 		{
@@ -103,14 +107,14 @@ login_access(const char *user, const char *from)
 			lineno++;
 			if (stpsep(line, "\n") == NULL) {
 				SYSLOG ((LOG_ERR,
-					 "%s: line %d: missing newline or line too long",
+					 "%s: line %jd: missing newline or line too long",
 					 TABLE, lineno));
 				continue;
 			}
-			if (line[0] == '#') {
+			if (strprefix(line, "#")) {
 				continue;	/* comment line */
 			}
-			stpcpy(strrspn(line, " \t"), "");
+			stpcpy(stprspn(line, " \t"), "");
 			if (streq(line, "")) {	/* skip blank lines */
 				continue;
 			}
@@ -120,13 +124,13 @@ login_access(const char *user, const char *from)
 			froms = strsep(&p, ":");
 			if (froms == NULL || p != NULL) {
 				SYSLOG ((LOG_ERR,
-					 "%s: line %d: bad field count",
+					 "%s: line %jd: bad field count",
 					 TABLE, lineno));
 				continue;
 			}
 			if (perm[0] != '+' && perm[0] != '-') {
 				SYSLOG ((LOG_ERR,
-					 "%s: line %d: bad first field",
+					 "%s: line %jd: bad first field",
 					 TABLE, lineno));
 				continue;
 			}
@@ -138,44 +142,39 @@ login_access(const char *user, const char *from)
 		int err = errno;
 		SYSLOG ((LOG_ERR, "cannot open %s: %s", TABLE, strerror (err)));
 	}
-	return (!match || (line[0] == '+'))?1:0;
+	return (!match || strprefix(line, "+"))?1:0;
 }
 
 /* list_match - match an item against a list of tokens with exceptions */
 static bool
-list_match(char *list, const char *item, bool (*match_fn)(const char *, const char*))
+list_match(char *list, const char *item, bool (*match_fn)(char *, const char*))
 {
-	static const char  sep[] = ", \t";
-
 	char *tok;
-	bool match = false;
+	bool inclusion = true;
+	bool matched = false;
+	bool result = false;
 
 	/*
 	 * Process tokens one at a time. We have exhausted all possible matches
 	 * when we reach an "EXCEPT" token or the end of the list. If we do find
-	 * a match, look for an "EXCEPT" list and recurse to determine whether
-	 * the match is affected by any exceptions.
+	 * a match, look for an "EXCEPT" list and determine whether the match is
+	 * affected by any exceptions.
 	 */
-	while (NULL != (tok = strsep(&list, sep))) {
-		if (strcasecmp (tok, "EXCEPT") == 0) {	/* EXCEPT: give up */
-			break;
-		}
-		match = (*match_fn) (tok, item);
-		if (match) {
-			break;
+	while (NULL != (tok = strsep(&list, ", \t"))) {
+		if (strcaseeq(tok, "EXCEPT")) {  /* EXCEPT: invert */
+			if (!matched) {	/* stop processing: not part of list */
+				break;
+			}
+			inclusion = !inclusion;
+			matched = false;
+
+		} else if ((*match_fn)(tok, item)) {
+			result = inclusion;
+			matched = true;
 		}
 	}
 
-	/* Process exceptions to matches. */
-	if (match) {
-		while (   (NULL != (tok = strsep(&list, sep)))
-		       && (strcasecmp (tok, "EXCEPT") != 0))
-			/* VOID */ ;
-		if (tok == NULL || !list_match(NULL, item, match_fn)) {
-			return (match);
-		}
-	}
-	return false;
+	return result;
 }
 
 /* myhostname - figure out local machine name */
@@ -209,7 +208,7 @@ netgroup_match (const char *group, const char *machine, const char *user)
 #endif
 
 /* user_match - match a username against one token */
-static bool user_match (const char *tok, const char *string)
+static bool user_match (char *tok, const char *string)
 {
 	struct group *group;
 
@@ -227,7 +226,7 @@ static bool user_match (const char *tok, const char *string)
 	if (host != NULL) {
 		return user_match(tok, string) && from_match(host, myhostname());
 #if HAVE_INNETGR
-	} else if (tok[0] == '@') {	/* netgroup */
+	} else if (strprefix(tok, "@")) {	/* netgroup */
 		return (netgroup_match (tok + 1, NULL, string));
 #endif
 	} else if (string_match (tok, string)) {	/* ALL or exact match */
@@ -236,7 +235,7 @@ static bool user_match (const char *tok, const char *string)
 	} else if ((group = getgrnam (tok)) != NULL) {	/* try group membership */
 		int i;
 		for (i = 0; NULL != group->gr_mem[i]; i++) {
-			if (strcasecmp (string, group->gr_mem[i]) == 0) {
+			if (strcaseeq(string, group->gr_mem[i])) {
 				return true;
 			}
 		}
@@ -277,7 +276,7 @@ static const char *resolve_hostname (const char *string)
 
 	addr_str = host;
 	gai_err = getnameinfo(addrs[0].ai_addr, addrs[0].ai_addrlen,
-	                      host, NITEMS(host), NULL, 0, NI_NUMERICHOST);
+	                      host, countof(host), NULL, 0, NI_NUMERICHOST);
 	if (gai_err != 0) {
 		SYSLOG ((LOG_ERR, "getnameinfo(%s): %s", string, gai_strerror(gai_err)));
 		addr_str = string;
@@ -289,10 +288,8 @@ static const char *resolve_hostname (const char *string)
 
 /* from_match - match a host or tty against a list of tokens */
 
-static bool from_match (const char *tok, const char *string)
+static bool from_match (char *tok, const char *string)
 {
-	size_t tok_len;
-
 	/*
 	 * If a token has the magic value "ALL" the match always succeeds. Return
 	 * true if the token fully matches the string. If the token is a domain
@@ -302,26 +299,26 @@ static bool from_match (const char *tok, const char *string)
 	 * if it matches the head of the string.
 	 */
 #if HAVE_INNETGR
-	if (tok[0] == '@') {	/* netgroup */
+	if (strprefix(tok, "@")) {  /* netgroup */
 		return (netgroup_match (tok + 1, string, NULL));
 	} else
 #endif
 	if (string_match (tok, string)) {	/* ALL or exact match */
 		return true;
-	} else if (tok[0] == '.') {	/* domain: match last fields */
-		size_t str_len;
+	} else if (strprefix(tok, ".")) {  /* domain: match last fields */
+		size_t  str_len, tok_len;
+
 		str_len = strlen (string);
 		tok_len = strlen (tok);
 		if (   (str_len > tok_len)
-		    && (strcasecmp (tok, string + str_len - tok_len) == 0)) {
+		    && strcaseeq(tok, string + str_len - tok_len)) {
 			return true;
 		}
-	} else if (strcasecmp (tok, "LOCAL") == 0) {	/* local: no dots */
-		if (strchr (string, '.') == NULL) {
+	} else if (strcaseeq(tok, "LOCAL")) {	/* LOCAL: no dots */
+		if (!strchr(string, '.'))
 			return true;
-		}
-	} else if (   (!streq(tok, "") && tok[(tok_len = strlen(tok)) - 1] == '.') /* network */
-		   && (strncmp (tok, resolve_hostname (string), tok_len) == 0)) {
+	} else if (   (!streq(tok, "") && tok[strlen(tok) - 1] == '.') /* network */
+		   && strprefix(resolve_hostname(string), tok)) {
 		return true;
 	}
 	return false;
@@ -335,9 +332,9 @@ static bool string_match (const char *tok, const char *string)
 	 * If the token has the magic value "ALL" the match always succeeds.
 	 * Otherwise, return true if the token fully matches the string.
 	 */
-	if (strcasecmp (tok, "ALL") == 0) {	/* all: always matches */
+	if (strcaseeq(tok, "ALL")) {  /* ALL: always matches */
 		return true;
-	} else if (strcasecmp (tok, string) == 0) {	/* try exact match */
+	} else if (strcaseeq(tok, string)) {  /* try exact match */
 		return true;
 	}
 	return false;

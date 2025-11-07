@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -26,6 +26,7 @@
 #include "pam_defs.h"
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
+#include <paths.h>
 #include <stdio.h>
 #include <strings.h>
 #include <sys/stat.h>
@@ -33,7 +34,6 @@
 #include <time.h>
 
 #include "alloc/malloc.h"
-#include "alloc/x/xmalloc.h"
 #include "atoi/a2i/a2i.h"
 #include "atoi/a2i/a2s.h"
 #include "atoi/getnum.h"
@@ -42,7 +42,6 @@
 #include "faillog.h"
 #include "getdef.h"
 #include "groupio.h"
-#include "must_be.h"
 #include "nscd.h"
 #include "prototypes.h"
 #include "pwauth.h"
@@ -60,13 +59,18 @@
 #ifdef WITH_TCB
 #include "tcbfuncs.h"
 #endif
+#include "shadow/gshadow/endsgent.h"
+#include "shadow/gshadow/sgrp.h"
 #include "shadowlog.h"
 #include "sssd.h"
 #include "string/memset/memzero.h"
-#include "string/sprintf/xasprintf.h"
+#include "string/sprintf/aprintf.h"
 #include "string/strcmp/streq.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strdup/strdup.h"
+#include "string/strerrno.h"
 #include "time/day_to_str.h"
+#include "typetraits.h"
 
 
 /*
@@ -93,7 +97,15 @@
 #define E_SUB_GID_UPDATE 18	/* can't update the subordinate gid file */
 #endif				/* ENABLE_SUBIDS */
 
-#define	VALID(s)	(strcspn (s, ":\n") == strlen (s))
+#define VALID(s)  (!strpbrk(s, ":\n"))
+
+/*
+ * Structures
+ */
+struct option_flags {
+	bool chroot;
+	bool prefix;
+};
 
 /*
  * Global variables
@@ -181,23 +193,23 @@ static bool sub_gid_locked = false;
 /* local function prototypes */
 static int get_groups (char *);
 NORETURN static void usage (int status);
-static void new_pwent (struct passwd *);
-static void new_spent (struct spwd *);
-NORETURN static void fail_exit (int);
-static void update_group_file(void);
-static void update_group(const struct group *grp);
+static void new_pwent (struct passwd *, bool);
+static void new_spent (struct spwd *, bool);
+NORETURN static void fail_exit (int, bool);
+static void update_group_file(bool);
+static void update_group(const struct group *grp, bool process_selinux);
 
 #ifdef SHADOWGRP
-static void update_gshadow_file(void);
-static void update_gshadow(const struct sgrp *sgrp);
+static void update_gshadow_file(bool process_selinux);
+static void update_gshadow(const struct sgrp *sgrp, bool process_selinux);
 #endif
-static void grp_update (void);
+static void grp_update (bool process_selinux);
 
-static void process_flags (int, char **);
-static void close_files (void);
-static void open_files (void);
-static void usr_update (void);
-static void move_home (void);
+static void process_flags (int, char **, struct option_flags *);
+static void close_files (struct option_flags *);
+static void open_files (bool process_selinux);
+static void usr_update (struct option_flags *flags);
+static void move_home (bool process_selinux);
 #ifdef ENABLE_LASTLOG
 static void update_lastlog (void);
 #endif /* ENABLE_LASTLOG */
@@ -219,7 +231,7 @@ extern int allow_bad_names;
 static int get_groups (char *list)
 {
 	struct group *grp;
-	int errors = 0;
+	bool errors = false;
 	int ngroups = 0;
 
 	/*
@@ -257,7 +269,7 @@ static int get_groups (char *list)
 		if (NULL == grp) {
 			fprintf (stderr, _("%s: group '%s' does not exist\n"),
 			         Prog, g);
-			errors++;
+			errors = true;
 		}
 
 		/*
@@ -288,7 +300,7 @@ static int get_groups (char *list)
 	/*
 	 * Any errors in finding group names are fatal
 	 */
-	if (0 != errors) {
+	if (errors) {
 		return -1;
 	}
 
@@ -357,7 +369,7 @@ prepend_range(const char *str, struct id_range_list_entry **head)
 	if (!entry) {
 		fprintf (stderr,
 			_("%s: failed to allocate memory: %s\n"),
-			Prog, strerror (errno));
+			Prog, strerrno());
 		return 0;
 	}
 	entry->next = *head;
@@ -427,16 +439,13 @@ usage (int status)
 static char *new_pw_passwd (char *pw_pass)
 {
 	if (Lflg && ('!' != pw_pass[0])) {
-		char  *buf;
-
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "updating passwd", user_newname, user_newid, 0);
+		audit_logger (AUDIT_USER_CHAUTHTOK,
+		              "updating-passwd", user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO, "lock user '%s' password", user_newname));
-		xasprintf(&buf, "!%s", pw_pass);
-		pw_pass = buf;
-	} else if (Uflg && pw_pass[0] == '!') {
+		pw_pass = xaprintf("!%s", pw_pass);
+	} else if (Uflg && strprefix(pw_pass, "!")) {
 		if (pw_pass[1] == '\0') {
 			fprintf (stderr,
 			         _("%s: unlocking the user's password would result in a passwordless account.\n"
@@ -446,15 +455,15 @@ static char *new_pw_passwd (char *pw_pass)
 		}
 
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "updating password", user_newname, user_newid, 0);
+		audit_logger (AUDIT_USER_CHAUTHTOK,
+		              "updating-password", user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO, "unlock user '%s' password", user_newname));
 		memmove(pw_pass, pw_pass + 1, strlen(pw_pass));
 	} else if (pflg) {
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing password", user_newname, user_newid, 1);
+		audit_logger (AUDIT_USER_CHAUTHTOK,
+		              "updating-password", user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO, "change user '%s' password", user_newname));
 		pw_pass = xstrdup (user_pass);
@@ -468,7 +477,7 @@ static char *new_pw_passwd (char *pw_pass)
  *	new_pwent() takes all of the values that have been entered and fills
  *	in a (struct passwd) with them.
  */
-static void new_pwent (struct passwd *pwent)
+static void new_pwent (struct passwd *pwent, bool process_selinux)
 {
 	if (lflg) {
 		if (pw_locate (user_newname) != NULL) {
@@ -479,11 +488,11 @@ static void new_pwent (struct passwd *pwent)
 			fprintf (stderr,
 			         _("%s: user '%s' already exists in %s\n"),
 			         Prog, user_newname, pw_dbname ());
-			fail_exit (E_NAME_IN_USE);
+			fail_exit (E_NAME_IN_USE, process_selinux);
 		}
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing name", user_newname, user_newid, 1);
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-name", user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO,
 		         "change user name '%s' to '%s'",
@@ -502,8 +511,8 @@ static void new_pwent (struct passwd *pwent)
 
 	if (uflg) {
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing uid", user_newname, user_newid, 1);
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-uid", user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO,
 		         "change user '%s' UID from '%d' to '%d'",
@@ -512,8 +521,8 @@ static void new_pwent (struct passwd *pwent)
 	}
 	if (gflg) {
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing primary group",
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-primary-group",
 		              user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO,
@@ -523,16 +532,16 @@ static void new_pwent (struct passwd *pwent)
 	}
 	if (cflg) {
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing comment", user_newname, user_newid, 1);
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-comment", user_newname, user_newid, 1);
 #endif
 		pwent->pw_gecos = user_newcomment;
 	}
 
 	if (dflg) {
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing home directory",
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-home-dir",
 		              user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO,
@@ -548,8 +557,8 @@ static void new_pwent (struct passwd *pwent)
 	}
 	if (sflg) {
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing user shell",
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-shell",
 		              user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO,
@@ -565,22 +574,22 @@ static void new_pwent (struct passwd *pwent)
  *	new_spent() takes all of the values that have been entered and fills
  *	in a (struct spwd) with them.
  */
-static void new_spent (struct spwd *spent)
+static void new_spent (struct spwd *spent, bool process_selinux)
 {
 	if (lflg) {
 		if (spw_locate (user_newname) != NULL) {
 			fprintf (stderr,
 			         _("%s: user '%s' already exists in %s\n"),
 			         Prog, user_newname, spw_dbname ());
-			fail_exit (E_NAME_IN_USE);
+			fail_exit (E_NAME_IN_USE, process_selinux);
 		}
 		spent->sp_namp = xstrdup (user_newname);
 	}
 
 	if (fflg) {
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing inactive days",
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-inactive-days",
 		              user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO,
@@ -595,8 +604,8 @@ static void new_spent (struct spwd *spent)
 		DAY_TO_STR(new_exp, user_newexpire);
 		DAY_TO_STR(old_exp, user_expire);
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-		              "changing expiration date",
+		audit_logger (AUDIT_USER_MGMT,
+		              "changing-expiration-date",
 		              user_newname, user_newid, 1);
 #endif
 		SYSLOG ((LOG_INFO,
@@ -631,10 +640,10 @@ static void new_spent (struct spwd *spent)
  */
 NORETURN
 static void
-fail_exit (int code)
+fail_exit (int code, bool process_selinux)
 {
 	if (gr_locked) {
-		if (gr_unlock () == 0) {
+		if (gr_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, gr_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", gr_dbname ()));
 			/* continue */
@@ -642,7 +651,7 @@ fail_exit (int code)
 	}
 #ifdef	SHADOWGRP
 	if (sgr_locked) {
-		if (sgr_unlock () == 0) {
+		if (sgr_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, sgr_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", sgr_dbname ()));
 			/* continue */
@@ -650,14 +659,14 @@ fail_exit (int code)
 	}
 #endif
 	if (spw_locked) {
-		if (spw_unlock () == 0) {
+		if (spw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, spw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
 			/* continue */
 		}
 	}
 	if (pw_locked) {
-		if (pw_unlock () == 0) {
+		if (pw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 			/* continue */
@@ -665,14 +674,14 @@ fail_exit (int code)
 	}
 #ifdef ENABLE_SUBIDS
 	if (sub_uid_locked) {
-		if (sub_uid_unlock () == 0) {
+		if (sub_uid_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, sub_uid_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", sub_uid_dbname ()));
 			/* continue */
 		}
 	}
 	if (sub_gid_locked) {
-		if (sub_gid_unlock () == 0) {
+		if (sub_gid_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, sub_gid_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", sub_gid_dbname ()));
 			/* continue */
@@ -681,16 +690,16 @@ fail_exit (int code)
 #endif				/* ENABLE_SUBIDS */
 
 #ifdef WITH_AUDIT
-	audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-	              "modifying account",
-	              user_name, AUDIT_NO_ID, 0);
+	audit_logger (AUDIT_USER_MGMT,
+	              "modify-account",
+	              user_name, AUDIT_NO_ID, SHADOW_AUDIT_FAILURE);
 #endif
 	exit (code);
 }
 
 
 static void
-update_group_file(void)
+update_group_file(bool process_selinux)
 {
 	const struct group  *grp;
 
@@ -698,13 +707,13 @@ update_group_file(void)
 	 * Scan through the entire group file looking for the groups that
 	 * the user is a member of.
 	 */
-	while ((grp = gr_next()) != NULL)
-		update_group(grp);
+	while (NULL != (grp = gr_next()))
+		update_group(grp, process_selinux);
 }
 
 
 static void
-update_group(const struct group *grp)
+update_group(const struct group *grp, bool process_selinux)
 {
 	bool          changed;
 	bool          is_member;
@@ -737,7 +746,7 @@ update_group(const struct group *grp)
 		fprintf (stderr,
 			 _("%s: Out of memory. Cannot update %s.\n"),
 			 Prog, gr_dbname ());
-		fail_exit (E_GRP_UPDATE);
+		fail_exit (E_GRP_UPDATE, process_selinux);
 	}
 
 	if (was_member) {
@@ -753,9 +762,12 @@ update_group(const struct group *grp)
 							 user_newname);
 				changed = true;
 #ifdef WITH_AUDIT
-				audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-					      "changing group member",
-					      user_newname, AUDIT_NO_ID, 1);
+				audit_logger_with_group (
+				              AUDIT_USER_MGMT,
+				              "update-member-in-group",
+				              user_newname, AUDIT_NO_ID, "grp",
+				              ngrp->gr_name,
+				              SHADOW_AUDIT_SUCCESS);
 #endif
 				SYSLOG ((LOG_INFO,
 					 "change '%s' to '%s' in group '%s'",
@@ -769,9 +781,11 @@ update_group(const struct group *grp)
 			ngrp->gr_mem = del_list (ngrp->gr_mem, user_name);
 			changed = true;
 #ifdef WITH_AUDIT
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-				      "removing group member",
-				      user_name, AUDIT_NO_ID, 1);
+			audit_logger_with_group (AUDIT_USER_MGMT,
+			              "delete-user-from-group",
+			              user_name, AUDIT_NO_ID, "grp",
+			              ngrp->gr_name,
+			              SHADOW_AUDIT_SUCCESS);
 #endif
 			SYSLOG ((LOG_INFO,
 				 "delete '%s' from group '%s'",
@@ -784,9 +798,11 @@ update_group(const struct group *grp)
 		ngrp->gr_mem = add_list (ngrp->gr_mem, user_newname);
 		changed = true;
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			      "adding user to group",
-			      user_name, AUDIT_NO_ID, 1);
+		audit_logger_with_group (AUDIT_USER_MGMT,
+		              "add-user-to-group",
+		              user_name, AUDIT_NO_ID, "grp",
+		              ngrp->gr_name,
+		              SHADOW_AUDIT_SUCCESS);
 #endif
 		SYSLOG ((LOG_INFO, "add '%s' to group '%s'",
 			 user_newname, ngrp->gr_name));
@@ -799,7 +815,7 @@ update_group(const struct group *grp)
 			 _("%s: failed to prepare the new %s entry '%s'\n"),
 			 Prog, gr_dbname (), ngrp->gr_name);
 		SYSLOG ((LOG_WARN, "failed to prepare the new %s entry '%s'", gr_dbname (), ngrp->gr_name));
-		fail_exit (E_GRP_UPDATE);
+		fail_exit (E_GRP_UPDATE, process_selinux);
 	}
 
 free_ngrp:
@@ -809,7 +825,7 @@ free_ngrp:
 
 #ifdef SHADOWGRP
 static void
-update_gshadow_file(void)
+update_gshadow_file(bool process_selinux)
 {
 	const struct sgrp  *sgrp;
 
@@ -817,15 +833,15 @@ update_gshadow_file(void)
 	 * Scan through the entire shadow group file looking for the groups
 	 * that the user is a member of.
 	 */
-	while ((sgrp = sgr_next()) != NULL)
-		update_gshadow(sgrp);
+	while (NULL != (sgrp = sgr_next()))
+		update_gshadow(sgrp, process_selinux);
 }
 #endif				/* SHADOWGRP */
 
 
 #ifdef SHADOWGRP
 static void
-update_gshadow(const struct sgrp *sgrp)
+update_gshadow(const struct sgrp *sgrp, bool process_selinux)
 {
 	bool         changed;
 	bool         is_member;
@@ -850,7 +866,7 @@ update_gshadow(const struct sgrp *sgrp)
 	 * concurrent groups.
 	 */
 	is_member = Gflg && (   (was_member && aflg)
-			     || is_on_list (user_groups, sgrp->sg_name));
+			     || is_on_list (user_groups, sgrp->sg_namp));
 
 	if (!was_member && !was_admin && !is_member)
 		return;
@@ -868,7 +884,7 @@ update_gshadow(const struct sgrp *sgrp)
 		fprintf (stderr,
 			 _("%s: Out of memory. Cannot update %s.\n"),
 			 Prog, sgr_dbname ());
-		fail_exit (E_GRP_UPDATE);
+		fail_exit (E_GRP_UPDATE, process_selinux);
 	}
 
 	if (was_admin && lflg) {
@@ -879,13 +895,14 @@ update_gshadow(const struct sgrp *sgrp)
 		nsgrp->sg_adm = add_list (nsgrp->sg_adm, user_newname);
 		changed = true;
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			      "changing admin name in shadow group",
-			      user_name, AUDIT_NO_ID, 1);
+		audit_logger_with_group (AUDIT_GRP_MGMT,
+		              "update-admin-name-in-shadow-group",
+		              user_name, AUDIT_NO_ID, "grp", nsgrp->sg_namp,
+		              SHADOW_AUDIT_SUCCESS);
 #endif
 		SYSLOG ((LOG_INFO,
 			 "change admin '%s' to '%s' in shadow group '%s'",
-			 user_name, user_newname, nsgrp->sg_name));
+			 user_name, user_newname, nsgrp->sg_namp));
 	}
 
 	if (was_member) {
@@ -901,14 +918,15 @@ update_gshadow(const struct sgrp *sgrp)
 							  user_newname);
 				changed = true;
 #ifdef WITH_AUDIT
-				audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-					      "changing member in shadow group",
-					      user_name, AUDIT_NO_ID, 1);
+				audit_logger_with_group (AUDIT_USER_MGMT,
+				              "update-member-in-shadow-group",
+				              user_name, AUDIT_NO_ID, "grp",
+				              nsgrp->sg_namp, 1);
 #endif
 				SYSLOG ((LOG_INFO,
 					 "change '%s' to '%s' in shadow group '%s'",
 					 user_name, user_newname,
-					 nsgrp->sg_name));
+					 nsgrp->sg_namp));
 			}
 		} else {
 			/* User was a member but is no more a
@@ -917,13 +935,14 @@ update_gshadow(const struct sgrp *sgrp)
 			nsgrp->sg_mem = del_list (nsgrp->sg_mem, user_name);
 			changed = true;
 #ifdef WITH_AUDIT
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-				      "removing user from shadow group",
-				      user_name, AUDIT_NO_ID, 1);
+			audit_logger_with_group (AUDIT_USER_MGMT,
+			              "delete-user-from-shadow-group",
+			              user_name, AUDIT_NO_ID, "grp",
+			              nsgrp->sg_namp, 1);
 #endif
 			SYSLOG ((LOG_INFO,
 				 "delete '%s' from shadow group '%s'",
-				 user_name, nsgrp->sg_name));
+				 user_name, nsgrp->sg_namp));
 		}
 	} else if (is_member) {
 		/* User was not a member but is now a member this
@@ -932,12 +951,13 @@ update_gshadow(const struct sgrp *sgrp)
 		nsgrp->sg_mem = add_list (nsgrp->sg_mem, user_newname);
 		changed = true;
 #ifdef WITH_AUDIT
-		audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			      "adding user to shadow group",
-			      user_newname, AUDIT_NO_ID, 1);
+		audit_logger_with_group (AUDIT_USER_MGMT,
+		              "add-user-to-shadow-group",
+		              user_newname, AUDIT_NO_ID, "grp",
+		              nsgrp->sg_namp, 1);
 #endif
 		SYSLOG ((LOG_INFO, "add '%s' to shadow group '%s'",
-			 user_newname, nsgrp->sg_name));
+			 user_newname, nsgrp->sg_namp));
 	}
 	if (!changed)
 		goto free_nsgrp;
@@ -948,10 +968,10 @@ update_gshadow(const struct sgrp *sgrp)
 	if (sgr_update (nsgrp) == 0) {
 		fprintf (stderr,
 			 _("%s: failed to prepare the new %s entry '%s'\n"),
-			 Prog, sgr_dbname (), nsgrp->sg_name);
+			 Prog, sgr_dbname (), nsgrp->sg_namp);
 		SYSLOG ((LOG_WARN, "failed to prepare the new %s entry '%s'",
-			 sgr_dbname (), nsgrp->sg_name));
-		fail_exit (E_GRP_UPDATE);
+			 sgr_dbname (), nsgrp->sg_namp));
+		fail_exit (E_GRP_UPDATE, process_selinux);
 	}
 
 free_nsgrp:
@@ -966,12 +986,12 @@ free_nsgrp:
  *	grp_update() takes the secondary group set given in user_groups and
  *	adds the user to each group given by that set.
  */
-static void grp_update (void)
+static void grp_update (bool process_selinux)
 {
-	update_group_file();
+	update_group_file(process_selinux);
 #ifdef SHADOWGRP
 	if (is_shadow_grp) {
-		update_gshadow_file();
+		update_gshadow_file(process_selinux);
 	}
 #endif
 }
@@ -984,7 +1004,7 @@ static void grp_update (void)
  *	are checked for sanity.
  */
 static void
-process_flags(int argc, char **argv)
+process_flags(int argc, char **argv, struct option_flags *flags)
 {
 	struct stat st;
 	bool anyflag = false;
@@ -1149,8 +1169,10 @@ process_flags(int argc, char **argv)
 				rflg = true;
 				break;
 			case 'R': /* no-op, handled in process_root_flag () */
+				flags->chroot = true;
 				break;
 			case 'P': /* no-op, handled in process_prefix_flag () */
+				flags->prefix = true;
 				break;
 			case 's':
 				if (   ( !VALID (optarg) )
@@ -1165,6 +1187,7 @@ process_flags(int argc, char **argv)
 				if (!streq(optarg, "")
 				     && '*'  != optarg[0]
 				     && !streq(optarg, "/sbin/nologin")
+				     && !streq(optarg, "/usr/sbin/nologin")
 				     && (   stat(optarg, &st) != 0
 				         || S_ISDIR(st.st_mode)
 				         || access(optarg, X_OK) != 0)) {
@@ -1291,10 +1314,10 @@ process_flags(int argc, char **argv)
 		user_newgid = user_gid;
 	}
 	if (prefix[0]) {
-		xasprintf(&prefix_user_home, "%s/%s", prefix, user_home);
+		prefix_user_home = xaprintf("%s/%s", prefix, user_home);
 		if (user_newhome) {
-			xasprintf(&prefix_user_newhome, "%s/%s",
-			          prefix, user_newhome);
+			prefix_user_newhome = xaprintf("%s/%s",
+			                               prefix, user_newhome);
 		}
 	} else {
 		prefix_user_home = user_home;
@@ -1366,49 +1389,6 @@ process_flags(int argc, char **argv)
 	}
 #endif				/* WITH_SELINUX */
 
-	if (user_newid == user_id) {
-		uflg = false;
-		oflg = false;
-	}
-	if (user_newgid == user_gid) {
-		gflg = false;
-	}
-	if (   (NULL != user_newshell)
-	    && streq(user_newshell, user_shell)) {
-		sflg = false;
-	}
-	if (streq(user_newname, user_name)) {
-		lflg = false;
-	}
-	if (user_newinactive == user_inactive) {
-		fflg = false;
-	}
-	if (user_newexpire == user_expire) {
-		eflg = false;
-	}
-	if (   (NULL != user_newhome)
-	    && streq(user_newhome, user_home)) {
-		dflg = false;
-		mflg = false;
-	}
-	if (   (NULL != user_newcomment)
-	    && streq(user_newcomment, user_comment)) {
-		cflg = false;
-	}
-
-	if (!(Uflg || uflg || sflg || pflg || mflg || Lflg ||
-	      lflg || Gflg || gflg || fflg || eflg || dflg || cflg
-#ifdef ENABLE_SUBIDS
-	      || vflg || Vflg || wflg || Wflg
-#endif				/* ENABLE_SUBIDS */
-#ifdef WITH_SELINUX
-	      || Zflg
-#endif				/* WITH_SELINUX */
-	)) {
-		fprintf (stdout, _("%s: no changes\n"), Prog);
-		exit (E_SUCCESS);
-	}
-
 	if (!is_shadow_pwd && (eflg || fflg)) {
 		fprintf (stderr,
 		         _("%s: shadow passwords required for -e and -f\n"),
@@ -1457,51 +1437,55 @@ process_flags(int argc, char **argv)
  *	close_files() closes all of the files that were opened for this new
  *	user. This causes any modified entries to be written out.
  */
-static void close_files (void)
+static void close_files (struct option_flags *flags)
 {
-	if (pw_close () == 0) {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
+
+	if (pw_close (process_selinux) == 0) {
 		fprintf (stderr,
 		         _("%s: failure while writing changes to %s\n"),
 		         Prog, pw_dbname ());
 		SYSLOG ((LOG_ERR, "failure while writing changes to %s", pw_dbname ()));
-		fail_exit (E_PW_UPDATE);
+		fail_exit (E_PW_UPDATE, process_selinux);
 	}
-	if (is_shadow_pwd && (spw_close () == 0)) {
+	if (is_shadow_pwd && (spw_close (process_selinux) == 0)) {
 		fprintf (stderr,
 		         _("%s: failure while writing changes to %s\n"),
 		         Prog, spw_dbname ());
 		SYSLOG ((LOG_ERR,
 		         "failure while writing changes to %s",
 		         spw_dbname ()));
-		fail_exit (E_PW_UPDATE);
+		fail_exit (E_PW_UPDATE, process_selinux);
 	}
 
 	if (Gflg || lflg) {
-		if (gr_close () == 0) {
+		if (gr_close (process_selinux) == 0) {
 			fprintf (stderr,
 			         _("%s: failure while writing changes to %s\n"),
 			         Prog, gr_dbname ());
 			SYSLOG ((LOG_ERR,
 			         "failure while writing changes to %s",
 			         gr_dbname ()));
-			fail_exit (E_GRP_UPDATE);
+			fail_exit (E_GRP_UPDATE, process_selinux);
 		}
 #ifdef SHADOWGRP
 		if (is_shadow_grp) {
-			if (sgr_close () == 0) {
+			if (sgr_close (process_selinux) == 0) {
 				fprintf (stderr,
 				         _("%s: failure while writing changes to %s\n"),
 				         Prog, sgr_dbname ());
 				SYSLOG ((LOG_ERR,
 				         "failure while writing changes to %s",
 				         sgr_dbname ()));
-				fail_exit (E_GRP_UPDATE);
+				fail_exit (E_GRP_UPDATE, process_selinux);
 			}
 		}
 #endif
 #ifdef SHADOWGRP
 		if (is_shadow_grp) {
-			if (sgr_unlock () == 0) {
+			if (sgr_unlock (process_selinux) == 0) {
 				fprintf (stderr,
 				         _("%s: failed to unlock %s\n"),
 				         Prog, sgr_dbname ());
@@ -1512,7 +1496,7 @@ static void close_files (void)
 			}
 		}
 #endif
-		if (gr_unlock () == 0) {
+		if (gr_unlock (process_selinux) == 0) {
 			fprintf (stderr,
 			         _("%s: failed to unlock %s\n"),
 			         Prog, gr_dbname ());
@@ -1524,7 +1508,7 @@ static void close_files (void)
 	}
 
 	if (is_shadow_pwd) {
-		if (spw_unlock () == 0) {
+		if (spw_unlock (process_selinux) == 0) {
 			fprintf (stderr,
 			         _("%s: failed to unlock %s\n"),
 			         Prog, spw_dbname ());
@@ -1534,7 +1518,7 @@ static void close_files (void)
 			/* continue */
 		}
 	}
-	if (pw_unlock () == 0) {
+	if (pw_unlock (process_selinux) == 0) {
 		fprintf (stderr,
 		         _("%s: failed to unlock %s\n"),
 		         Prog, pw_dbname ());
@@ -1551,12 +1535,12 @@ static void close_files (void)
 
 #ifdef ENABLE_SUBIDS
 	if (vflg || Vflg) {
-		if (sub_uid_close () == 0) {
+		if (sub_uid_close (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failure while writing changes to %s\n"), Prog, sub_uid_dbname ());
 			SYSLOG ((LOG_ERR, "failure while writing changes to %s", sub_uid_dbname ()));
-			fail_exit (E_SUB_UID_UPDATE);
+			fail_exit (E_SUB_UID_UPDATE, process_selinux);
 		}
-		if (sub_uid_unlock () == 0) {
+		if (sub_uid_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, sub_uid_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", sub_uid_dbname ()));
 			/* continue */
@@ -1564,12 +1548,12 @@ static void close_files (void)
 		sub_uid_locked = false;
 	}
 	if (wflg || Wflg) {
-		if (sub_gid_close () == 0) {
+		if (sub_gid_close (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failure while writing changes to %s\n"), Prog, sub_gid_dbname ());
 			SYSLOG ((LOG_ERR, "failure while writing changes to %s", sub_gid_dbname ()));
-			fail_exit (E_SUB_GID_UPDATE);
+			fail_exit (E_SUB_GID_UPDATE, process_selinux);
 		}
-		if (sub_gid_unlock () == 0) {
+		if (sub_gid_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, sub_gid_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", sub_gid_dbname ()));
 			/* continue */
@@ -1594,33 +1578,33 @@ static void close_files (void)
  *
  *	open_files() opens the two password files.
  */
-static void open_files (void)
+static void open_files (bool process_selinux)
 {
 	if (pw_lock () == 0) {
 		fprintf (stderr,
 		         _("%s: cannot lock %s; try again later.\n"),
 		         Prog, pw_dbname ());
-		fail_exit (E_PW_UPDATE);
+		fail_exit (E_PW_UPDATE, process_selinux);
 	}
 	pw_locked = true;
 	if (pw_open (O_CREAT | O_RDWR) == 0) {
 		fprintf (stderr,
 		         _("%s: cannot open %s\n"),
 		         Prog, pw_dbname ());
-		fail_exit (E_PW_UPDATE);
+		fail_exit (E_PW_UPDATE, process_selinux);
 	}
 	if (is_shadow_pwd && (spw_lock () == 0)) {
 		fprintf (stderr,
 		         _("%s: cannot lock %s; try again later.\n"),
 		         Prog, spw_dbname ());
-		fail_exit (E_PW_UPDATE);
+		fail_exit (E_PW_UPDATE, process_selinux);
 	}
 	spw_locked = true;
 	if (is_shadow_pwd && (spw_open (O_CREAT | O_RDWR) == 0)) {
 		fprintf (stderr,
 		         _("%s: cannot open %s\n"),
 		         Prog, spw_dbname ());
-		fail_exit (E_PW_UPDATE);
+		fail_exit (E_PW_UPDATE, process_selinux);
 	}
 
 	if (Gflg || lflg) {
@@ -1632,28 +1616,28 @@ static void open_files (void)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, gr_dbname ());
-			fail_exit (E_GRP_UPDATE);
+			fail_exit (E_GRP_UPDATE, process_selinux);
 		}
 		gr_locked = true;
 		if (gr_open (O_CREAT | O_RDWR) == 0) {
 			fprintf (stderr,
 			         _("%s: cannot open %s\n"),
 			         Prog, gr_dbname ());
-			fail_exit (E_GRP_UPDATE);
+			fail_exit (E_GRP_UPDATE, process_selinux);
 		}
 #ifdef SHADOWGRP
 		if (is_shadow_grp && (sgr_lock () == 0)) {
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, sgr_dbname ());
-			fail_exit (E_GRP_UPDATE);
+			fail_exit (E_GRP_UPDATE, process_selinux);
 		}
 		sgr_locked = true;
 		if (is_shadow_grp && (sgr_open (O_CREAT | O_RDWR) == 0)) {
 			fprintf (stderr,
 			         _("%s: cannot open %s\n"),
 			         Prog, sgr_dbname ());
-			fail_exit (E_GRP_UPDATE);
+			fail_exit (E_GRP_UPDATE, process_selinux);
 		}
 #endif
 	}
@@ -1663,14 +1647,14 @@ static void open_files (void)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, sub_uid_dbname ());
-			fail_exit (E_SUB_UID_UPDATE);
+			fail_exit (E_SUB_UID_UPDATE, process_selinux);
 		}
 		sub_uid_locked = true;
 		if (sub_uid_open (O_CREAT | O_RDWR) == 0) {
 			fprintf (stderr,
 			         _("%s: cannot open %s\n"),
 			         Prog, sub_uid_dbname ());
-			fail_exit (E_SUB_UID_UPDATE);
+			fail_exit (E_SUB_UID_UPDATE, process_selinux);
 		}
 	}
 	if (wflg || Wflg) {
@@ -1678,14 +1662,14 @@ static void open_files (void)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, sub_gid_dbname ());
-			fail_exit (E_SUB_GID_UPDATE);
+			fail_exit (E_SUB_GID_UPDATE, process_selinux);
 		}
 		sub_gid_locked = true;
 		if (sub_gid_open (O_CREAT | O_RDWR) == 0) {
 			fprintf (stderr,
 			         _("%s: cannot open %s\n"),
 			         Prog, sub_gid_dbname ());
-			fail_exit (E_SUB_GID_UPDATE);
+			fail_exit (E_SUB_GID_UPDATE, process_selinux);
 		}
 	}
 #endif				/* ENABLE_SUBIDS */
@@ -1697,13 +1681,15 @@ static void open_files (void)
  *	usr_update() creates the password file entries for this user and
  *	will update the group entries if required.
  */
-static void usr_update (void)
+static void usr_update (struct option_flags *flags)
 {
 	struct passwd pwent;
 	const struct passwd *pwd;
-
 	struct spwd spent;
 	const struct spwd *spwd = NULL;
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
 
 	/*
 	 * Locate the entry in /etc/passwd, which MUST exist.
@@ -1713,10 +1699,10 @@ static void usr_update (void)
 		fprintf (stderr,
 		         _("%s: user '%s' does not exist in %s\n"),
 		         Prog, user_name, pw_dbname ());
-		fail_exit (E_NOTFOUND);
+		fail_exit (E_NOTFOUND, process_selinux);
 	}
 	pwent = *pwd;
-	new_pwent (&pwent);
+	new_pwent (&pwent, process_selinux);
 
 
 	/* If the shadow file does not exist, it won't be created */
@@ -1725,7 +1711,7 @@ static void usr_update (void)
 		if (NULL != spwd) {
 			/* Update the shadow entry if it exists */
 			spent = *spwd;
-			new_spent (&spent);
+			new_spent (&spent, process_selinux);
 		} else if (   (    pflg
 		               && streq(pwent.pw_passwd, SHADOW_PASSWD_STRING))
 		           || eflg || fflg) {
@@ -1756,7 +1742,7 @@ static void usr_update (void)
 			spent.sp_inact  = -1;
 			spent.sp_expire = -1;
 			spent.sp_flag   = SHADOW_SP_FLAG_UNSET;
-			new_spent (&spent);
+			new_spent (&spent, process_selinux);
 			spwd = &spent; /* entry needs to be committed */
 		}
 	}
@@ -1767,13 +1753,13 @@ static void usr_update (void)
 			fprintf (stderr,
 			         _("%s: failed to prepare the new %s entry '%s'\n"),
 			         Prog, pw_dbname (), pwent.pw_name);
-			fail_exit (E_PW_UPDATE);
+			fail_exit (E_PW_UPDATE, process_selinux);
 		}
 		if (lflg && (pw_remove (user_name) == 0)) {
 			fprintf (stderr,
 			         _("%s: cannot remove entry '%s' from %s\n"),
 			         Prog, user_name, pw_dbname ());
-			fail_exit (E_PW_UPDATE);
+			fail_exit (E_PW_UPDATE, process_selinux);
 		}
 	}
 	if ((NULL != spwd) && (lflg || eflg || fflg || pflg || Lflg || Uflg)) {
@@ -1781,13 +1767,13 @@ static void usr_update (void)
 			fprintf (stderr,
 			         _("%s: failed to prepare the new %s entry '%s'\n"),
 			         Prog, spw_dbname (), spent.sp_namp);
-			fail_exit (E_PW_UPDATE);
+			fail_exit (E_PW_UPDATE, process_selinux);
 		}
 		if (lflg && (spw_remove (user_name) == 0)) {
 			fprintf (stderr,
 			         _("%s: cannot remove entry '%s' from %s\n"),
 			         Prog, user_name, spw_dbname ());
-			fail_exit (E_PW_UPDATE);
+			fail_exit (E_PW_UPDATE, process_selinux);
 		}
 	}
 }
@@ -1798,7 +1784,7 @@ static void usr_update (void)
  *	move_home() moves the user's home directory to a new location. The
  *	files will be copied if the directory cannot simply be renamed.
  */
-static void move_home (void)
+static void move_home (bool process_selinux)
 {
 	struct stat sb;
 
@@ -1810,7 +1796,7 @@ static void move_home (void)
 		fprintf (stderr,
 		         _("%s: directory %s exists\n"),
 		         Prog, user_newhome);
-		fail_exit (E_HOMEDIR);
+		fail_exit (E_HOMEDIR, process_selinux);
 	}
 
 	if (stat (prefix_user_home, &sb) == 0) {
@@ -1824,13 +1810,13 @@ static void move_home (void)
 			           "not a directory. It is not removed and no "
 			           "home directories are created.\n"),
 			         Prog, user_home);
-			fail_exit (E_HOMEDIR);
+			fail_exit (E_HOMEDIR, process_selinux);
 		}
 
 #ifdef WITH_AUDIT
 		if (uflg || gflg) {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-				      "changing home directory owner",
+			audit_logger (AUDIT_USER_MGMT,
+				      "updating-home-dir-owner",
 				      user_newname, user_newid, 1);
 		}
 #endif
@@ -1845,11 +1831,11 @@ static void move_home (void)
 				fprintf (stderr,
 				         _("%s: Failed to change ownership of the home directory"),
 				         Prog);
-				fail_exit (E_HOMEDIR);
+				fail_exit (E_HOMEDIR, process_selinux);
 			}
 #ifdef WITH_AUDIT
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "moving home directory",
+			audit_logger (AUDIT_USER_MGMT,
+			              "moving-home-dir",
 			              user_newname, user_newid, 1);
 #endif
 			return;
@@ -1860,7 +1846,7 @@ static void move_home (void)
 					fprintf (stderr,
 					        _("%s: error: cannot move subvolume from %s to %s - different device\n"),
 					        Prog, prefix_user_home, prefix_user_newhome);
-					fail_exit (E_HOMEDIR);
+					fail_exit (E_HOMEDIR, process_selinux);
 				}
 #endif
 
@@ -1876,9 +1862,8 @@ static void move_home (void)
 						         Prog, prefix_user_home);
 					}
 #ifdef WITH_AUDIT
-					audit_logger (AUDIT_USER_CHAUTHTOK,
-					              Prog,
-					              "moving home directory",
+					audit_logger (AUDIT_USER_MGMT,
+					              "moving-home-dir",
 					              user_newname,
 					              user_newid,
 					              1);
@@ -1891,7 +1876,7 @@ static void move_home (void)
 			fprintf (stderr,
 			         _("%s: cannot rename directory %s to %s\n"),
 			         Prog, prefix_user_home, prefix_user_newhome);
-			fail_exit (E_HOMEDIR);
+			fail_exit (E_HOMEDIR, process_selinux);
 		}
 	} else {
 		fprintf (stderr,
@@ -1917,7 +1902,7 @@ static void update_lastlog (void)
 	off_t off_newuid = (off_t) user_newid * sizeof ll;
 	uid_t max_uid;
 
-	if (access (LASTLOG_FILE, F_OK) != 0) {
+	if (access(_PATH_LASTLOG, F_OK) != 0) {
 		return;
 	}
 
@@ -1927,12 +1912,12 @@ static void update_lastlog (void)
 		return;
 	}
 
-	fd = open (LASTLOG_FILE, O_RDWR);
+	fd = open(_PATH_LASTLOG, O_RDWR);
 
 	if (-1 == fd) {
 		fprintf (stderr,
 		         _("%s: failed to copy the lastlog entry of user %lu to user %lu: %s\n"),
-		         Prog, (unsigned long) user_id, (unsigned long) user_newid, strerror (errno));
+		        Prog, (unsigned long) user_id, (unsigned long) user_newid, strerrno());
 		return;
 	}
 
@@ -1944,7 +1929,7 @@ static void update_lastlog (void)
 		    || (fsync (fd) != 0)) {
 			fprintf (stderr,
 			         _("%s: failed to copy the lastlog entry of user %lu to user %lu: %s\n"),
-			         Prog, (unsigned long) user_id, (unsigned long) user_newid, strerror (errno));
+			        Prog, (unsigned long) user_id, (unsigned long) user_newid, strerrno());
 		}
 	} else {
 		/* Assume lseek or read failed because there is
@@ -1960,7 +1945,7 @@ static void update_lastlog (void)
 			    || (fsync (fd) != 0)) {
 				fprintf (stderr,
 				         _("%s: failed to copy the lastlog entry of user %lu to user %lu: %s\n"),
-				         Prog, (unsigned long) user_id, (unsigned long) user_newid, strerror (errno));
+				        Prog, (unsigned long) user_id, (unsigned long) user_newid, strerrno());
 			}
 		}
 	}
@@ -1968,7 +1953,7 @@ static void update_lastlog (void)
 	if (close (fd) != 0 && errno != EINTR) {
 		fprintf (stderr,
 		         _("%s: failed to copy the lastlog entry of user %ju to user %ju: %s\n"),
-		         Prog, (uintmax_t) user_id, (uintmax_t) user_newid, strerror (errno));
+		        Prog, (uintmax_t) user_id, (uintmax_t) user_newid, strerrno());
 	}
 }
 #endif /* ENABLE_LASTLOG */
@@ -1996,7 +1981,7 @@ static void update_faillog (void)
 	if (-1 == fd) {
 		fprintf (stderr,
 		         _("%s: failed to copy the faillog entry of user %lu to user %lu: %s\n"),
-		         Prog, (unsigned long) user_id, (unsigned long) user_newid, strerror (errno));
+		        Prog, (unsigned long) user_id, (unsigned long) user_newid, strerrno());
 		return;
 	}
 
@@ -2008,7 +1993,7 @@ static void update_faillog (void)
 		    || (fsync (fd) != 0)) {
 			fprintf (stderr,
 			         _("%s: failed to copy the faillog entry of user %lu to user %lu: %s\n"),
-			         Prog, (unsigned long) user_id, (unsigned long) user_newid, strerror (errno));
+			        Prog, (unsigned long) user_id, (unsigned long) user_newid, strerrno());
 		}
 	} else {
 		/* Assume lseek or read failed because there is
@@ -2024,7 +2009,7 @@ static void update_faillog (void)
 			{
 				fprintf (stderr,
 				         _("%s: failed to copy the faillog entry of user %lu to user %lu: %s\n"),
-				         Prog, (unsigned long) user_id, (unsigned long) user_newid, strerror (errno));
+				        Prog, (unsigned long) user_id, (unsigned long) user_newid, strerrno());
 			}
 		}
 	}
@@ -2032,7 +2017,7 @@ static void update_faillog (void)
 	if (close (fd) != 0 && errno != EINTR) {
 		fprintf (stderr,
 		         _("%s: failed to copy the faillog entry of user %ju to user %ju: %s\n"),
-		         Prog, (uintmax_t) user_id, (uintmax_t) user_newid, strerror (errno));
+		        Prog, (uintmax_t) user_id, (uintmax_t) user_newid, strerrno());
 	}
 }
 
@@ -2068,9 +2053,9 @@ static void move_mailbox (void)
 	 * between stat and chown).  --marekm
 	 */
 	if (prefix[0]) {
-		xasprintf(&mailfile, "%s/%s/%s", prefix, maildir, user_name);
+		mailfile = xaprintf("%s/%s/%s", prefix, maildir, user_name);
 	} else {
-		xasprintf(&mailfile, "%s/%s", maildir, user_name);
+		mailfile = xaprintf("%s/%s", maildir, user_name);
 	}
 
 	fd = open (mailfile, O_RDONLY | O_NONBLOCK, 0);
@@ -2102,8 +2087,8 @@ static void move_mailbox (void)
 		}
 #ifdef WITH_AUDIT
 		else {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "changing mail file owner",
+			audit_logger (AUDIT_USER_MGMT,
+			              "updating-mail-file-owner",
 			              user_newname, user_newid, 1);
 		}
 #endif
@@ -2115,10 +2100,10 @@ static void move_mailbox (void)
 		char  *newmailfile;
 
 		if (prefix[0]) {
-			xasprintf(&newmailfile, "%s/%s/%s",
-			          prefix, maildir, user_newname);
+			newmailfile = xaprintf("%s/%s/%s",
+			                       prefix, maildir, user_newname);
 		} else {
-			xasprintf(&newmailfile, "%s/%s", maildir, user_newname);
+			newmailfile = xaprintf("%s/%s", maildir, user_newname);
 		}
 		if (   (link (mailfile, newmailfile) != 0)
 		    || (unlink (mailfile) != 0)) {
@@ -2126,8 +2111,8 @@ static void move_mailbox (void)
 		}
 #ifdef WITH_AUDIT
 		else {
-			audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-			              "changing mail file name",
+			audit_logger (AUDIT_USER_MGMT,
+			              "updating-mail-file-name",
 			              user_newname, user_newid, 1);
 		}
 
@@ -2150,6 +2135,8 @@ int main (int argc, char **argv)
 	int retval;
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
+	struct option_flags  flags;
+	bool process_selinux;
 
 	log_set_progname(Prog);
 	log_set_logfd(stderr);
@@ -2175,11 +2162,12 @@ int main (int argc, char **argv)
 	is_shadow_grp = sgr_file_present ();
 #endif
 #ifdef ENABLE_SUBIDS
-	is_sub_uid = sub_uid_file_present ();
-	is_sub_gid = sub_gid_file_present ();
+	is_sub_uid = want_subuid_file() && sub_uid_file_present();
+	is_sub_gid = want_subgid_file() && sub_gid_file_present();
 #endif				/* ENABLE_SUBIDS */
 
-	process_flags (argc, argv);
+	process_flags (argc, argv, &flags);
+	process_selinux = !flags.chroot && !flags.prefix;
 
 	/*
 	 * The home directory, the username and the user's UID should not
@@ -2241,13 +2229,13 @@ int main (int argc, char **argv)
 	 * Do the hard stuff - open the files, change the user entries,
 	 * change the home directory, then close and update the files.
 	 */
-	open_files ();
+	open_files (process_selinux);
 	if (   cflg || dflg || eflg || fflg || gflg || Lflg || lflg || pflg
 	    || sflg || uflg || Uflg) {
-		usr_update ();
+		usr_update (&flags);
 	}
 	if (Gflg || lflg) {
-		grp_update ();
+		grp_update (process_selinux);
 	}
 #ifdef ENABLE_SUBIDS
 	if (Vflg) {
@@ -2263,7 +2251,7 @@ int main (int argc, char **argv)
 				        (uintmax_t) ptr->range.first,
 				        (uintmax_t) ptr->range.last,
 				        sub_uid_dbname());
-				fail_exit (E_SUB_UID_UPDATE);
+				fail_exit (E_SUB_UID_UPDATE, process_selinux);
 			}
 		}
 	}
@@ -2280,7 +2268,7 @@ int main (int argc, char **argv)
 				        (uintmax_t) ptr->range.first,
 				        (uintmax_t) ptr->range.last,
 				        sub_uid_dbname());
-				fail_exit (E_SUB_UID_UPDATE);
+				fail_exit (E_SUB_UID_UPDATE, process_selinux);
 			}
 		}
 	}
@@ -2297,7 +2285,7 @@ int main (int argc, char **argv)
 				        (uintmax_t) ptr->range.first,
 				        (uintmax_t) ptr->range.last,
 				        sub_gid_dbname());
-				fail_exit (E_SUB_GID_UPDATE);
+				fail_exit (E_SUB_GID_UPDATE, process_selinux);
 			}
 		}
 	}
@@ -2314,12 +2302,12 @@ int main (int argc, char **argv)
 				        (uintmax_t) ptr->range.first,
 				        (uintmax_t) ptr->range.last,
 				        sub_gid_dbname());
-				fail_exit (E_SUB_GID_UPDATE);
+				fail_exit (E_SUB_GID_UPDATE, process_selinux);
 			}
 		}
 	}
 #endif				/* ENABLE_SUBIDS */
-	close_files ();
+	close_files (&flags);
 
 #ifdef WITH_TCB
 	if (   (lflg || uflg)
@@ -2340,12 +2328,12 @@ int main (int argc, char **argv)
 				         _("%s: warning: the user name %s to %s SELinux user mapping failed.\n"),
 				         Prog, user_name, user_selinux);
 #ifdef WITH_AUDIT
-				audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-				              "modifying User mapping ",
+				audit_logger (AUDIT_ROLE_ASSIGN,
+				              "changing-selinux-user-mapping ",
 				              user_name, user_id,
 				              SHADOW_AUDIT_FAILURE);
 #endif				/* WITH_AUDIT */
-				fail_exit (E_SE_UPDATE);
+				fail_exit (E_SE_UPDATE, process_selinux);
 			}
 		} else {
 			if (del_seuser (user_name) != 0) {
@@ -2353,19 +2341,19 @@ int main (int argc, char **argv)
 				         _("%s: warning: the user name %s to SELinux user mapping removal failed.\n"),
 				         Prog, user_name);
 #ifdef WITH_AUDIT
-				audit_logger (AUDIT_ADD_USER, Prog,
-				              "removing SELinux user mapping",
+				audit_logger (AUDIT_ROLE_REMOVE,
+				              "delete-selinux-user-mapping",
 				              user_name, user_id,
 				              SHADOW_AUDIT_FAILURE);
 #endif				/* WITH_AUDIT */
-				fail_exit (E_SE_UPDATE);
+				fail_exit (E_SE_UPDATE, process_selinux);
 			}
 		}
 	}
 #endif				/* WITH_SELINUX */
 
 	if (mflg) {
-		move_home ();
+		move_home (process_selinux);
 	}
 
 #ifndef NO_MOVE_MAILBOX
@@ -2397,8 +2385,8 @@ int main (int argc, char **argv)
 			 */
 #ifdef WITH_AUDIT
 			if (uflg || gflg) {
-				audit_logger (AUDIT_USER_CHAUTHTOK, Prog,
-					      "changing home directory owner",
+				audit_logger (AUDIT_USER_MGMT,
+					      "updating-home-dir-owner",
 					      user_newname, user_newid, 1);
 			}
 #endif
@@ -2410,7 +2398,7 @@ int main (int argc, char **argv)
 				fprintf (stderr,
 				         _("%s: Failed to change ownership of the home directory"),
 				         Prog);
-				fail_exit (E_HOMEDIR);
+				fail_exit (E_HOMEDIR, process_selinux);
 			}
 		}
 	}

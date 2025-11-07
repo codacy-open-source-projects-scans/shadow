@@ -28,7 +28,7 @@
    Boston, MA 02110-1301, USA.  */
 
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -46,7 +46,7 @@
 #include <fcntl.h>
 #endif				/* !USE_PAM */
 
-#include "alloc/x/xmalloc.h"
+#include "alloc/malloc.h"
 #include "attr.h"
 #include "cast.h"
 #include "defines.h"
@@ -59,11 +59,12 @@
 #include "pwauth.h"
 #include "prototypes.h"
 #include "shadowlog.h"
+#include "string/sprintf/aprintf.h"
 #include "string/sprintf/snprintf.h"
-#include "string/sprintf/xasprintf.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strprefix.h"
 #include "string/strcpy/strtcpy.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strdup/strdup.h"
 
 
 /*
@@ -186,7 +187,7 @@ static bool restricted_shell (const char *shellname)
 	/*@observer@*/const char *line;
 
 	setusershell ();
-	while ((line = getusershell ()) != NULL) {
+	while (NULL != (line = getusershell())) {
 		if (('#' != *line) && streq(line, shellname)) {
 			endusershell ();
 			return false;
@@ -590,7 +591,7 @@ static void check_perms_nopam (const struct passwd *pw)
 	 * The first character of an administrator defined method is an '@'
 	 * character.
 	 */
-	if (pw_auth (password, name, PW_SU, NULL) != 0) {
+	if (pw_auth(password, name) != 0) {
 		SYSLOG (((pw->pw_uid != 0)? LOG_NOTICE : LOG_WARN,
 		         "Authentication failed for %s", name));
 		fprintf(stderr, _("%s: Authentication failure\n"), Prog);
@@ -714,7 +715,7 @@ static /*@only@*/struct passwd * do_check_perms (void)
 	 * the shell specified in /etc/passwd (not the one specified with
 	 * --shell, which will be the one executed in the chroot later).
 	 */
-	if ('*' == pw->pw_shell[0]) {	/* subsystem root required */
+	if (strprefix(pw->pw_shell, "*")) {  /* subsystem root required */
 		subsystem (pw);	/* change to the subsystem root */
 		endpwent ();		/* close the old password databases */
 		endspent ();
@@ -915,7 +916,7 @@ static void set_environment (struct passwd *pw)
 #ifndef USE_PAM
 		cp = getdef_str ("ENV_TZ");
 		if (NULL != cp) {
-			addenv (('/' == *cp) ? tz (cp) : cp, NULL);
+			addenv(strprefix(cp, "/") ? tz(cp) : cp, NULL);
 		}
 
 		/*
@@ -950,7 +951,7 @@ static void set_environment (struct passwd *pw)
 	cp = getdef_str ((pw->pw_uid == 0) ? "ENV_SUPATH" : "ENV_PATH");
 	if (NULL == cp) {
 		addenv ((pw->pw_uid == 0) ? "PATH=/sbin:/bin:/usr/sbin:/usr/bin" : "PATH=/bin:/usr/bin", NULL);
-	} else if (strchr (cp, '=') != NULL) {
+	} else if (strchr(cp, '=')) {
 		addenv (cp, NULL);
 	} else {
 		addenv ("PATH", cp);
@@ -1030,10 +1031,8 @@ int main (int argc, char **argv)
 #ifdef USE_PAM
 	ret = pam_start (Prog, name, &conv, &pamh);
 	if (PAM_SUCCESS != ret) {
-		SYSLOG ((LOG_ERR, "pam_start: error %d", ret);
-		fprintf (stderr,
-		         _("%s: pam_start: error %d\n"),
-		         Prog, ret));
+		SYSLOG((LOG_ERR, "pam_start: error %d", ret));
+		fprintf(stderr, _("%s: pam_start: error %d\n"), Prog, ret);
 		exit (1);
 	}
 
@@ -1204,14 +1203,12 @@ int main (int argc, char **argv)
 	 * case they will be provided to the new user's shell as arguments.
 	 */
 	if (fakelogin) {
-		char  *arg0;
-
 		cp = getdef_str ("SU_NAME");
 		if (NULL == cp) {
 			cp = Basename (shellstr);
 		}
 
-		xasprintf(&arg0, "-%s", cp);
+		cp = xaprintf("-%s", cp);
 	} else {
 		cp = Basename (shellstr);
 	}

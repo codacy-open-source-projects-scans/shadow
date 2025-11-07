@@ -37,12 +37,6 @@ libshadow_la_SOURCES = \
 	alloc/realloc.h \
 	alloc/reallocf.c \
 	alloc/reallocf.h \
-	alloc/x/xcalloc.c \
-	alloc/x/xcalloc.h \
-	alloc/x/xmalloc.c \
-	alloc/x/xmalloc.h \
-	alloc/x/xrealloc.c \
-	alloc/x/xrealloc.h \
 	atoi/a2i/a2i.c \
 	atoi/a2i/a2i.h \
 	atoi/a2i/a2s.c \
@@ -59,12 +53,8 @@ libshadow_la_SOURCES = \
 	atoi/a2i/a2u_nc.h \
 	atoi/getnum.c \
 	atoi/getnum.h \
-	atoi/str2i/str2i.c \
-	atoi/str2i/str2i.h \
-	atoi/str2i/str2s.c \
-	atoi/str2i/str2s.h \
-	atoi/str2i/str2u.c \
-	atoi/str2i/str2u.h \
+	atoi/str2i.c \
+	atoi/str2i.h \
 	atoi/strtoi/strtoi.c \
 	atoi/strtoi/strtoi.h \
 	atoi/strtoi/strtou.c \
@@ -79,6 +69,8 @@ libshadow_la_SOURCES = \
 	cast.h \
 	chkname.c \
 	chkname.h \
+	chkhash.c \
+	chkhash.h \
 	chowndir.c \
 	chowntty.c \
 	cleanup.c \
@@ -92,24 +84,29 @@ libshadow_la_SOURCES = \
 	defines.h \
 	encrypt.c \
 	env.c \
+	exit_if_null.c \
+	exit_if_null.h \
 	exitcodes.h \
 	faillog.h \
 	failure.c \
 	failure.h \
 	fd.c \
 	fields.c \
+	fields.h \
 	find_new_gid.c \
 	find_new_uid.c \
 	find_new_sub_gids.c \
 	find_new_sub_uids.c \
 	fputsx.c \
+	fs/mkstemp/fmkomstemp.c \
+	fs/mkstemp/fmkomstemp.h \
+	fs/mkstemp/mkomstemp.c \
+	fs/mkstemp/mkomstemp.h \
 	fs/readlink/areadlink.c \
 	fs/readlink/areadlink.h \
 	fs/readlink/readlinknul.c \
 	fs/readlink/readlinknul.h \
 	get_pid.c \
-	getdate.h \
-	getdate.y \
 	getdef.c \
 	getdef.h \
 	getgr_nam_gid.c \
@@ -118,7 +115,6 @@ libshadow_la_SOURCES = \
 	groupio.c \
 	groupmem.c \
 	groupio.h \
-	gshadow.c \
 	hushed.c \
 	idmapping.h \
 	idmapping.c \
@@ -129,7 +125,6 @@ libshadow_la_SOURCES = \
 	loginprompt.c \
 	mail.c \
 	motd.c \
-	must_be.h \
 	myname.c \
 	nss.c \
 	nscd.c \
@@ -155,16 +150,46 @@ libshadow_la_SOURCES = \
 	run_part.h \
 	run_part.c \
 	salt.c \
+	search/cmp/cmp.c \
+	search/cmp/cmp.h \
+	search/l/lfind.c \
+	search/l/lfind.h \
+	search/l/lsearch.c \
+	search/l/lsearch.h \
+	search/sort/qsort.c \
+	search/sort/qsort.h \
 	selinux.c \
 	semanage.c \
 	setugid.c \
 	setupenv.c \
-	sgetgrent.c \
-	sgetpwent.c \
-	sgetspent.c \
 	sgroupio.c \
-	sgroupio.h\
-	shadow.c \
+	sgroupio.h \
+	shadow/group/sgetgrent.c \
+	shadow/group/sgetgrent.h \
+	shadow/grp/agetgroups.c \
+	shadow/grp/agetgroups.h \
+	shadow/gshadow/endsgent.c \
+	shadow/gshadow/endsgent.h \
+	shadow/gshadow/fgetsgent.c \
+	shadow/gshadow/fgetsgent.h \
+	shadow/gshadow/getsgent.c \
+	shadow/gshadow/getsgent.h \
+	shadow/gshadow/getsgnam.c \
+	shadow/gshadow/getsgnam.h \
+	shadow/gshadow/gshadow.c \
+	shadow/gshadow/gshadow.h \
+	shadow/gshadow/putsgent.c \
+	shadow/gshadow/putsgent.h \
+	shadow/gshadow/setsgent.c \
+	shadow/gshadow/setsgent.h \
+	shadow/gshadow/sgetsgent.c \
+	shadow/gshadow/sgetsgent.h \
+	shadow/gshadow/sgrp.c \
+	shadow/gshadow/sgrp.h \
+	shadow/passwd/sgetpwent.c \
+	shadow/passwd/sgetpwent.h \
+	shadow/shadow/sgetspent.c \
+	shadow/shadow/sgetspent.h \
 	shadowio.c \
 	shadowio.h \
 	shadowlog.c \
@@ -176,24 +201,38 @@ libshadow_la_SOURCES = \
 	spawn.c \
 	sssd.c \
 	sssd.h \
+	string/ctype/strchrisascii/strchriscntrl.c \
+	string/ctype/strchrisascii/strchriscntrl.h \
+	string/ctype/strisascii/strisdigit.c \
+	string/ctype/strisascii/strisdigit.h \
+	string/ctype/strisascii/strisprint.c \
+	string/ctype/strisascii/strisprint.h \
+	string/ctype/strtoascii/strtolower.c \
+	string/ctype/strtoascii/strtolower.h \
 	string/memset/memzero.c \
 	string/memset/memzero.h \
+	string/sprintf/aprintf.c \
+	string/sprintf/aprintf.h \
 	string/sprintf/snprintf.c \
 	string/sprintf/snprintf.h \
 	string/sprintf/stpeprintf.c \
 	string/sprintf/stpeprintf.h \
-	string/sprintf/xasprintf.c \
-	string/sprintf/xasprintf.h \
 	string/strchr/strchrcnt.c \
 	string/strchr/strchrcnt.h \
-	string/strchr/stpspn.c \
-	string/strchr/stpspn.h \
+	string/strchr/strchrscnt.c \
+	string/strchr/strchrscnt.h \
 	string/strchr/strnul.c \
 	string/strchr/strnul.h \
-	string/strchr/strrspn.c \
-	string/strchr/strrspn.h \
+	string/strcmp/strcaseeq.c \
+	string/strcmp/strcaseeq.h \
+	string/strcmp/strcaseprefix.c \
+	string/strcmp/strcaseprefix.h \
 	string/strcmp/streq.c \
 	string/strcmp/streq.h \
+	string/strcmp/strneq.c \
+	string/strcmp/strneq.h \
+	string/strcmp/strprefix.c \
+	string/strcmp/strprefix.h \
 	string/strcpy/stpecpy.c \
 	string/strcpy/stpecpy.h \
 	string/strcpy/strncat.c \
@@ -202,16 +241,34 @@ libshadow_la_SOURCES = \
 	string/strcpy/strncpy.h \
 	string/strcpy/strtcpy.c \
 	string/strcpy/strtcpy.h \
+	string/strdup/strdup.c \
+	string/strdup/strdup.h \
 	string/strdup/strndupa.c \
 	string/strdup/strndupa.h \
-	string/strdup/xstrdup.c \
-	string/strdup/xstrdup.h \
-	string/strdup/xstrndup.c \
-	string/strdup/xstrndup.h \
+	string/strdup/strndup.c \
+	string/strdup/strndup.h \
+	string/strerrno.c \
+	string/strerrno.h \
 	string/strftime.c \
 	string/strftime.h \
+	string/strspn/stpspn.c \
+	string/strspn/stpspn.h \
+	string/strspn/stprcspn.c \
+	string/strspn/stprcspn.h \
+	string/strspn/stprspn.c \
+	string/strspn/stprspn.h \
+	string/strspn/strrcspn.c \
+	string/strspn/strrcspn.h \
+	string/strspn/strrspn.c \
+	string/strspn/strrspn.h \
 	string/strtok/stpsep.c \
 	string/strtok/stpsep.h \
+	string/strtok/astrsep2ls.c \
+	string/strtok/astrsep2ls.h \
+	string/strtok/strsep2arr.c \
+	string/strtok/strsep2arr.h \
+	string/strtok/strsep2ls.c \
+	string/strtok/strsep2ls.h \
 	strtoday.c \
 	sub.c \
 	subordinateio.h \
@@ -267,5 +324,4 @@ endif
 
 EXTRA_DIST = \
 	.indent.pro \
-	gshadow_.h \
 	xgetXXbyYY.c

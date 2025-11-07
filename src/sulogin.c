@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -28,7 +28,8 @@
 #include "exitcodes.h"
 #include "shadowlog.h"
 #include "string/strcmp/streq.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strdup/strdup.h"
 
 
 /*
@@ -117,7 +118,7 @@ main(int argc, char *argv[])
 #ifndef USE_PAM
 	env = getdef_str ("ENV_TZ");
 	if (NULL != env) {
-		addenv (('/' == *env) ? tz (env) : env, NULL);
+		addenv(strprefix(env, "/") ? tz(env) : env, NULL);
 	}
 	env = getdef_str ("ENV_HZ");
 	if (NULL != env) {

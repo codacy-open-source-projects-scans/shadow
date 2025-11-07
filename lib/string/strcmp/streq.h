@@ -6,7 +6,7 @@
 #define SHADOW_INCLUDE_LIB_STRING_STRCMP_STREQ_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <stdbool.h>
 #include <string.h>
@@ -19,6 +19,7 @@ ATTR_STRING(2)
 inline bool streq(const char *s1, const char *s2);
 
 
+// strings equal
 /* Return true if s1 and s2 compare equal.  */
 inline bool
 streq(const char *s1, const char *s2)

@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 #include "prototypes.h"
 #include "defines.h"
 #include <assert.h>
@@ -16,7 +16,7 @@
 #include <string.h>
 
 #include "getdef.h"
-#include "string/sprintf/xasprintf.h"
+#include "string/sprintf/aprintf.h"
 
 #ident "$Id$"
 
@@ -37,7 +37,7 @@ void mailcheck (void)
 	if (NULL != mailbox) {
 		char  *newmail;
 
-		xasprintf(&newmail, "%s/new", mailbox);
+		newmail = xaprintf("%s/new", mailbox);
 
 		if (stat (newmail, &statbuf) != -1 && statbuf.st_size != 0) {
 			if (statbuf.st_mtime > statbuf.st_atime) {

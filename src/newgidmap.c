@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -13,12 +13,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
 #include "defines.h"
-#include "prototypes.h"
-#include "subordinateio.h"
 #include "getdef.h"
 #include "idmapping.h"
+#include "prototypes.h"
 #include "shadowlog.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strerrno.h"
+#include "subordinateio.h"
+
 
 /*
  * Global variables
@@ -100,8 +104,7 @@ static void write_setgroups(int proc_dir_fd, bool allow_setgroups)
 			goto out;
 		}
 		fprintf(stderr, _("%s: couldn't open process setgroups: %s\n"),
-			Prog,
-			strerror(errno));
+			Prog, strerrno());
 		exit(EXIT_FAILURE);
 	}
 
@@ -112,25 +115,21 @@ static void write_setgroups(int proc_dir_fd, bool allow_setgroups)
 	 */
 	if (read(setgroups_fd, policy_buffer, sizeof(policy_buffer)) < 0) {
 		fprintf(stderr, _("%s: failed to read setgroups: %s\n"),
-			Prog,
-			strerror(errno));
+			Prog, strerrno());
 		exit(EXIT_FAILURE);
 	}
-	if (!strncmp(policy_buffer, policy, strlen(policy)))
+	if (strprefix(policy_buffer, policy))
 		goto out;
 
 	/* Write the policy. */
 	if (lseek(setgroups_fd, 0, SEEK_SET) < 0) {
 		fprintf(stderr, _("%s: failed to seek setgroups: %s\n"),
-			Prog,
-			strerror(errno));
+			Prog, strerrno());
 		exit(EXIT_FAILURE);
 	}
 	if (dprintf(setgroups_fd, "%s", policy) < 0) {
 		fprintf(stderr, _("%s: failed to setgroups %s policy: %s\n"),
-			Prog,
-			policy,
-			strerror(errno));
+			Prog, policy, strerrno());
 		exit(EXIT_FAILURE);
 	}
 
@@ -166,7 +165,7 @@ int main(int argc, char **argv)
 	 */
 
 	target_str = argv[1];
-	if (strlen(target_str) > 3 && strncmp(target_str, "fd:", 3) == 0) {
+	if (strlen(target_str) > 3 && strprefix(target_str, "fd:")) {
 		/* the user passed in a /proc/pid fd for the process */
 		target_str = &target_str[3];
 		proc_dir_fd = get_pidfd_from_fd(target_str);
@@ -190,8 +189,9 @@ int main(int argc, char **argv)
 
 	/* Get the effective uid and effective gid of the target process */
 	if (fstat(proc_dir_fd, &st) < 0) {
-		fprintf(stderr, _("%s: Could not stat directory for process\n"),
-			Prog);
+		fprintf(stderr,
+		        _("%s: Could not stat directory for target process: %s\n"),
+		        Prog, strerrno());
 		return EXIT_FAILURE;
 	}
 
@@ -210,7 +210,10 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	if (!sub_gid_open(O_RDONLY)) {
+	if (want_subgid_file() && !sub_gid_open(O_RDONLY)) {
+		fprintf (stderr,
+		         _("%s: cannot open %s: %s\n"),
+		         Prog, sub_gid_dbname(), strerrno());
 		return EXIT_FAILURE;
 	}
 
@@ -223,7 +226,8 @@ int main(int argc, char **argv)
 
 	write_setgroups(proc_dir_fd, allow_setgroups);
 	write_mapping(proc_dir_fd, ranges, mappings, "gid_map", pw->pw_uid);
-	sub_gid_close();
+	if (want_subgid_file())
+		sub_gid_close(true);
 
 	return EXIT_SUCCESS;
 }

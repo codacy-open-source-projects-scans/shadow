@@ -11,7 +11,7 @@
  * Separated from setup.c.  --marekm
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -26,10 +26,11 @@
 #include <pwd.h>
 #include "getdef.h"
 #include "shadowlog.h"
-#include "string/sprintf/xasprintf.h"
-#include "string/strchr/stpspn.h"
+#include "string/sprintf/aprintf.h"
 #include "string/strcmp/streq.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strdup/strdup.h"
+#include "string/strspn/stpspn.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -39,7 +40,7 @@ addenv_path(const char *varname, const char *dirname, const char *filename)
 {
 	char  *buf;
 
-	xasprintf(&buf, "%s/%s", dirname, filename);
+	buf = xaprintf("%s/%s", dirname, filename);
 	addenv(varname, buf);
 	free(buf);
 }
@@ -61,7 +62,7 @@ static void read_env_file (const char *filename)
 		cp = buf;
 		/* ignore whitespace and comments */
 		cp = stpspn(cp, " \t");
-		if (streq(cp, "") || ('#' == *cp)) {
+		if (streq(cp, "") || strprefix(cp, "#")) {
 			continue;
 		}
 		/*
@@ -72,7 +73,7 @@ static void read_env_file (const char *filename)
 		val = stpsep(cp, "=");
 		if (val == NULL)
 			continue;
-		if (strpbrk(name, " \t") != NULL)
+		if (strpbrk(name, " \t"))
 			continue;
 #if 0				/* XXX untested, and needs rewrite with fewer goto's :-) */
 /*
@@ -234,7 +235,7 @@ void setup_env (struct passwd *info)
 	if (NULL == cp) {
 		/* not specified, use a minimal default */
 		addenv ((info->pw_uid == 0) ? "PATH=/sbin:/bin:/usr/sbin:/usr/bin" : "PATH=/bin:/usr/bin", NULL);
-	} else if (strchr (cp, '=')) {
+	} else if (strchr(cp, '=')) {
 		/* specified as name=value (PATH=...) */
 		addenv (cp, NULL);
 	} else {

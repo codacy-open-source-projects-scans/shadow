@@ -6,14 +6,14 @@
 #define SHADOW_INCLUDE_LIB_STRING_STRCPY_STRNCAT_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <string.h>
 
 #include "sizeof.h"
 
 
-#define STRNCAT(dst, src)  strncat(dst, src, NITEMS(src))
+#define STRNCAT(dst, src)  strncat(dst, src, countof(src))
 
 
 #endif  // include guard

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 1996-2000, Marek Michałkiewicz
 // SPDX-FileCopyrightText: 2001-2005, Tomasz Kłoczko
 // SPDX-FileCopyrightText: 2005-2008, Nicolas François
-// SPDX-FileCopyrightText: 2023-2024, Alejandro Colomar <alx@kernel.org>
+// SPDX-FileCopyrightText: 2023-2025, Alejandro Colomar <alx@kernel.org>
 // SPDX-License-Identifier: BSD-3-Clause
 
 
@@ -18,7 +18,7 @@
  */
 
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -27,13 +27,17 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
-#include <sys/param.h>
 #include <unistd.h>
 
 #include "defines.h"
 #include "chkname.h"
+#include "string/ctype/strisascii/strisdigit.h"
 #include "string/strcmp/streq.h"
+
+
+#ifndef  LOGIN_NAME_MAX
+# define LOGIN_NAME_MAX  256
+#endif
 
 
 int allow_bad_names = false;
@@ -44,12 +48,11 @@ login_name_max_size(void)
 {
 	long  conf;
 
-	errno = 0;
 	conf = sysconf(_SC_LOGIN_NAME_MAX);
-	if (conf == -1 && errno != 0)
+	if (conf == -1)
 		return LOGIN_NAME_MAX;
 
-	return MIN(conf, PTRDIFF_MAX);
+	return conf;
 }
 
 
@@ -69,11 +72,15 @@ is_valid_name(const char *name)
          *
          * Also do not allow fully numeric names or just "." or "..".
          */
-	int numeric;
 
-	if ('\0' == *name ||
-	    ('.' == *name && (('.' == name[1] && '\0' == name[2]) ||
-			      '\0' == name[1])) ||
+	if (strisdigit(name)) {
+		errno = EINVAL;
+		return false;
+	}
+
+	if (streq(name, "") ||
+	    streq(name, ".") ||
+	    streq(name, "..") ||
 	    !((*name >= 'a' && *name <= 'z') ||
 	      (*name >= 'A' && *name <= 'Z') ||
 	      (*name >= '0' && *name <= '9') ||
@@ -84,8 +91,6 @@ is_valid_name(const char *name)
 		return false;
 	}
 
-	numeric = isdigit(*name);
-
 	while (!streq(++name, "")) {
 		if (!((*name >= 'a' && *name <= 'z') ||
 		      (*name >= 'A' && *name <= 'Z') ||
@@ -93,18 +98,12 @@ is_valid_name(const char *name)
 		      *name == '_' ||
 		      *name == '.' ||
 		      *name == '-' ||
-		      (*name == '$' && name[1] == '\0')
+		      streq(name, "$")
 		     ))
 		{
 			errno = EINVAL;
 			return false;
 		}
-		numeric &= isdigit(*name);
-	}
-
-	if (numeric) {
-		errno = EINVAL;
-		return false;
 	}
 
 	return true;

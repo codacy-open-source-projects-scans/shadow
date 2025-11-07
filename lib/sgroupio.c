@@ -8,19 +8,24 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ifdef SHADOWGRP
 
-#ident "$Id$"
+#include <paths.h>
 
 #include "alloc/calloc.h"
 #include "alloc/malloc.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "commonio.h"
+#include "fields.h"
 #include "getdef.h"
 #include "sgroupio.h"
+#include "shadow/gshadow/gshadow.h"
+#include "shadow/gshadow/putsgent.h"
+#include "shadow/gshadow/sgetsgent.h"
+#include "shadow/gshadow/sgrp.h"
 #include "string/memset/memzero.h"
 
 
@@ -36,9 +41,9 @@
 	/* Do the same as the other _dup function, even if we know the
 	 * structure. */
 	/*@-mustfreeonly@*/
-	sg->sg_name = strdup (sgent->sg_name);
+	sg->sg_namp = strdup (sgent->sg_namp);
 	/*@=mustfreeonly@*/
-	if (NULL == sg->sg_name) {
+	if (NULL == sg->sg_namp) {
 		free (sg);
 		return NULL;
 	}
@@ -46,7 +51,7 @@
 	sg->sg_passwd = strdup (sgent->sg_passwd);
 	/*@=mustfreeonly@*/
 	if (NULL == sg->sg_passwd) {
-		free (sg->sg_name);
+		free (sg->sg_namp);
 		free (sg);
 		return NULL;
 	}
@@ -57,7 +62,7 @@
 	/*@=mustfreeonly@*/
 	if (NULL == sg->sg_adm) {
 		free (sg->sg_passwd);
-		free (sg->sg_name);
+		free (sg->sg_namp);
 		free (sg);
 		return NULL;
 	}
@@ -69,7 +74,7 @@
 			}
 			free (sg->sg_adm);
 			free (sg->sg_passwd);
-			free (sg->sg_name);
+			free (sg->sg_namp);
 			free (sg);
 			return NULL;
 		}
@@ -86,7 +91,7 @@
 		}
 		free (sg->sg_adm);
 		free (sg->sg_passwd);
-		free (sg->sg_name);
+		free (sg->sg_namp);
 		free (sg);
 		return NULL;
 	}
@@ -102,7 +107,7 @@
 			}
 			free (sg->sg_adm);
 			free (sg->sg_passwd);
-			free (sg->sg_name);
+			free (sg->sg_namp);
 			free (sg);
 			return NULL;
 		}
@@ -131,7 +136,7 @@ void
 sgr_free(/*@only@*/struct sgrp *sgent)
 {
 	size_t i;
-	free (sgent->sg_name);
+	free (sgent->sg_namp);
 	if (NULL != sgent->sg_passwd)
 		free(strzero(sgent->sg_passwd));
 
@@ -150,7 +155,7 @@ static const char *gshadow_getname (const void *ent)
 {
 	const struct sgrp *gr = ent;
 
-	return gr->sg_name;
+	return gr->sg_namp;
 }
 
 static void *gshadow_parse (const char *line)
@@ -163,7 +168,7 @@ static int gshadow_put (const void *ent, FILE * file)
 	const struct sgrp *sg = ent;
 
 	if (   (NULL == sg)
-	    || (valid_field (sg->sg_name, ":\n") == -1)
+	    || (valid_field (sg->sg_namp, ":\n") == -1)
 	    || (valid_field (sg->sg_passwd, ":\n") == -1)) {
 		return -1;
 	}
@@ -204,7 +209,7 @@ static struct commonio_ops gshadow_ops = {
 };
 
 static struct commonio_db gshadow_db = {
-	SGROUP_FILE,		/* filename */
+	_PATH_GSHADOW,		/* filename */
 	&gshadow_ops,		/* ops */
 	NULL,			/* fp */
 #ifdef WITH_SELINUX
@@ -275,14 +280,14 @@ int sgr_rewind (void)
 	return commonio_next (&gshadow_db);
 }
 
-int sgr_close (void)
+int sgr_close (bool process_selinux)
 {
-	return commonio_close (&gshadow_db);
+	return commonio_close (&gshadow_db, process_selinux);
 }
 
-int sgr_unlock (void)
+int sgr_unlock (bool process_selinux)
 {
-	return commonio_unlock (&gshadow_db);
+	return commonio_unlock (&gshadow_db, process_selinux);
 }
 
 void __sgr_set_changed (void)

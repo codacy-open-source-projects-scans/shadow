@@ -1,28 +1,29 @@
-/*
- * SPDX-FileCopyrightText: 1989 - 1994, Julianne Frances Haugh
- * SPDX-FileCopyrightText: 1996 - 1999, Marek Michałkiewicz
- * SPDX-FileCopyrightText: 2003 - 2005, Tomasz Kłoczko
- * SPDX-FileCopyrightText: 2007 - 2010, Nicolas François
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
+// SPDX-FileCopyrightText: 1989-1994, Julianne Frances Haugh
+// SPDX-FileCopyrightText: 1996-1999, Marek Michałkiewicz
+// SPDX-FileCopyrightText: 2003-2005, Tomasz Kłoczko
+// SPDX-FileCopyrightText: 2007-2010, Nicolas François
+// SPDX-FileCopyrightText: 2025, Alejandro Colomar <alx@kernel.org>
+// SPDX-License-Identifier: BSD-3-Clause
 
-#include <config.h>
+
+#include "config.h"
 
 #ident "$Id$"
 
 
 #include <ctype.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "attr.h"
 #include "prototypes.h"
 #include "defines.h"
 #include "getdef.h"
+#include "string/ctype/strtoascii/strtolower.h"
 #include "string/memset/memzero.h"
-#include "string/sprintf/xasprintf.h"
+#include "string/sprintf/aprintf.h"
 #include "string/strcmp/streq.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strdup/strdup.h"
 
 
 #if WITH_LIBBSD == 0
@@ -32,7 +33,8 @@
 /*
  * can't be a palindrome - like `R A D A R' or `M A D A M'
  */
-static bool palindrome (MAYBE_UNUSED const char *old, const char *new)
+static bool
+palindrome(const char *new)
 {
 	size_t i, j;
 
@@ -66,9 +68,8 @@ static bool similar (/*@notnull@*/const char *old, /*@notnull@*/const char *new)
 	}
 
 	for (i = j = 0; ('\0' != new[i]) && ('\0' != old[i]); i++) {
-		if (strchr (new, old[i]) != NULL) {
+		if (strchr(new, old[i]))
 			j++;
-		}
 	}
 
 	if (i >= j * 2) {
@@ -78,20 +79,10 @@ static bool similar (/*@notnull@*/const char *old, /*@notnull@*/const char *new)
 	return true;
 }
 
-static char *str_lower (/*@returned@*/char *string)
-{
-	char *cp;
-
-	for (cp = string; !streq(cp, ""); cp++) {
-		*cp = tolower (*cp);
-	}
-	return string;
-}
 
 static /*@observer@*//*@null@*/const char *password_check (
 	/*@notnull@*/const char *old,
-	/*@notnull@*/const char *new,
-	/*@notnull@*/MAYBE_UNUSED const struct passwd *pwdp)
+	/*@notnull@*/const char *new)
 {
 	const char *msg = NULL;
 	char *oldmono, *newmono, *wrapped;
@@ -100,11 +91,11 @@ static /*@observer@*//*@null@*/const char *password_check (
 		return _("no change");
 	}
 
-	newmono = str_lower (xstrdup (new));
-	oldmono = str_lower (xstrdup (old));
-	xasprintf(&wrapped, "%s%s", oldmono, oldmono);
+	newmono = strtolower(xstrdup(new));
+	oldmono = strtolower(xstrdup(old));
+	wrapped = xaprintf("%s%s", oldmono, oldmono);
 
-	if (palindrome (oldmono, newmono)) {
+	if (palindrome(newmono)) {
 		msg = _("a palindrome");
 	} else if (streq(oldmono, newmono)) {
 		msg = _("case changes only");
@@ -122,8 +113,7 @@ static /*@observer@*//*@null@*/const char *password_check (
 
 static /*@observer@*//*@null@*/const char *obscure_msg (
 	/*@notnull@*/const char *old,
-	/*@notnull@*/const char *new,
-	/*@notnull@*/const struct passwd *pwdp)
+	/*@notnull@*/const char *new)
 {
 	size_t maxlen, oldlen, newlen;
 	char *new1, *old1;
@@ -144,7 +134,7 @@ static /*@observer@*//*@null@*/const char *obscure_msg (
 		return NULL;
 	}
 
-	msg = password_check (old, new, pwdp);
+	msg = password_check(old, new);
 	if (NULL != msg) {
 		return msg;
 	}
@@ -192,7 +182,7 @@ static /*@observer@*//*@null@*/const char *obscure_msg (
 	if (oldlen > maxlen)
 		stpcpy(&old1[maxlen], "");
 
-	msg = password_check (old1, new1, pwdp);
+	msg = password_check(old1, new1);
 
 	freezero (new1, newlen);
 	freezero (old1, oldlen);
@@ -208,9 +198,10 @@ static /*@observer@*//*@null@*/const char *obscure_msg (
  *	check passwords.
  */
 
-bool obscure (const char *old, const char *new, const struct passwd *pwdp)
+bool
+obscure(const char *old, const char *new)
 {
-	const char *msg = obscure_msg (old, new, pwdp);
+	const char *msg = obscure_msg(old, new);
 
 	if (NULL != msg) {
 		printf (_("Bad password: %s.  "), msg);

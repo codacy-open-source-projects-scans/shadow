@@ -6,7 +6,7 @@
 #define SHADOW_INCLUDE_LIB_STRING_STRCHR_STRCHRCNT_H_
 
 
-#include <config.h>
+#include "config.h"
 
 #include <stddef.h>
 
@@ -18,6 +18,7 @@ ATTR_STRING(1)
 inline size_t strchrcnt(const char *s, char c);
 
 
+// string character count
 inline size_t
 strchrcnt(const char *s, char c)
 {

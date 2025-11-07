@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -18,6 +18,7 @@
 #include "getdef.h"
 #include "prototypes.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strprefix.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -47,7 +48,7 @@ void ttytype (const char *line)
 		return;
 	}
 	while (fgets (buf, sizeof buf, fp) == buf) {
-		if (buf[0] == '#') {
+		if (strprefix(buf, "#")) {
 			continue;
 		}
 

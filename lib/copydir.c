@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "alloc/x/xmalloc.h"
+#include "alloc/malloc.h"
 #include "attr.h"
 #include "fs/readlink/areadlink.h"
 #include "prototypes.h"
@@ -38,8 +38,10 @@
 #include <attr/libattr.h>
 #endif				/* WITH_ATTR */
 #include "shadowlog.h"
-#include "string/sprintf/xasprintf.h"
+#include "string/sprintf/aprintf.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strerrno.h"
 
 
 static /*@null@*/const char *src_orig;
@@ -70,12 +72,10 @@ static int copy_dir (const struct path_info *src, const struct path_info *dst,
                      uid_t old_uid, uid_t new_uid,
                      gid_t old_gid, gid_t new_gid);
 static int copy_symlink (const struct path_info *src, const struct path_info *dst,
-                         MAYBE_UNUSED bool reset_selinux,
                          const struct stat *statp, const struct timespec mt[],
                          uid_t old_uid, uid_t new_uid,
                          gid_t old_gid, gid_t new_gid);
 static int copy_hardlink (const struct path_info *dst,
-                          MAYBE_UNUSED bool reset_selinux,
                           struct link_name *lp);
 static int copy_special (const struct path_info *src, const struct path_info *dst,
                          bool reset_selinux,
@@ -116,7 +116,7 @@ static void error_acl (MAYBE_UNUSED struct error_context *ctx, const char *fmt, 
 	if (vfprintf (shadow_logfd, fmt, ap) != 0) {
 		(void) fputs (_(": "), shadow_logfd);
 	}
-	(void) fprintf (shadow_logfd, "%s\n", strerror (errno));
+	(void) fprintf(shadow_logfd, "%s\n", strerrno());
 	va_end (ap);
 }
 
@@ -232,7 +232,7 @@ static /*@exposed@*/ /*@null@*/struct link_name *check_link (const char *name, c
 	lp->ln_dev = sb->st_dev;
 	lp->ln_ino = sb->st_ino;
 	lp->ln_count = sb->st_nlink;
-	xasprintf(&lp->ln_name, "%s%s", dst_orig, name + strlen(src_orig));
+	lp->ln_name = xaprintf("%s%s", dst_orig, name + strlen(src_orig));
 	lp->ln_next = links;
 	links = lp;
 
@@ -308,7 +308,7 @@ static int copy_tree_impl (const struct path_info *src, const struct path_info *
 		dst_orig = dst->full_path;
 		set_orig = true;
 	}
-	while ((0 == err) && (ent = readdir (dir)) != NULL) {
+	while (0 == err && NULL != (ent = readdir(dir))) {
 		char              *src_name = NULL;
 		char              *dst_name;
 		struct path_info  src_entry, dst_entry;
@@ -321,13 +321,13 @@ static int copy_tree_impl (const struct path_info *src, const struct path_info *
 			continue;
 		}
 
-		if (asprintf(&src_name, "%s/%s", src->full_path, ent->d_name) == -1)
-		{
+		src_name = aprintf("%s/%s", src->full_path, ent->d_name);
+		if (src_name == NULL) {
 			err = -1;
 			continue;
 		}
-		if (asprintf(&dst_name, "%s/%s", dst->full_path, ent->d_name) == -1)
-		{
+		dst_name = aprintf("%s/%s", dst->full_path, ent->d_name);
+		if (dst_name == NULL) {
 			err = -1;
 			goto skip;
 		}
@@ -435,7 +435,7 @@ static int copy_entry (const struct path_info *src, const struct path_info *dst,
 	*/
 
 	else if (S_ISLNK (sb.st_mode)) {
-		err = copy_symlink (src, dst, reset_selinux, &sb, mt,
+		err = copy_symlink (src, dst, &sb, mt,
 				    old_uid, new_uid, old_gid, new_gid);
 	}
 
@@ -444,7 +444,7 @@ static int copy_entry (const struct path_info *src, const struct path_info *dst,
 	*/
 
 	else if ((lp = check_link (src->full_path, &sb)) != NULL) {
-		err = copy_hardlink (dst, reset_selinux, lp);
+		err = copy_hardlink (dst, lp);
 	}
 
 	/*
@@ -549,7 +549,6 @@ static int copy_dir (const struct path_info *src, const struct path_info *dst,
  *	Return 0 on success, -1 on error.
  */
 static int copy_symlink (const struct path_info *src, const struct path_info *dst,
-                         MAYBE_UNUSED bool reset_selinux,
                          const struct stat *statp, const struct timespec mt[],
                          uid_t old_uid, uid_t new_uid,
                          gid_t old_gid, gid_t new_gid)
@@ -576,10 +575,10 @@ static int copy_symlink (const struct path_info *src, const struct path_info *ds
 	 * create a link to the corresponding entry in the dst_orig
 	 * directory.
 	 */
-	if (strncmp(oldlink, src_orig, strlen(src_orig)) == 0) {
+	if (strprefix(oldlink, src_orig)) {
 		char  *dummy;
 
-		xasprintf(&dummy, "%s%s", dst_orig, oldlink + strlen(src_orig));
+		dummy = xaprintf("%s%s", dst_orig, oldlink + strlen(src_orig));
 		free(oldlink);
 		oldlink = dummy;
 	}
@@ -620,7 +619,6 @@ static int copy_symlink (const struct path_info *src, const struct path_info *ds
  *	Return 0 on success, -1 on error.
  */
 static int copy_hardlink (const struct path_info *dst,
-                          MAYBE_UNUSED bool reset_selinux,
                           struct link_name *lp)
 {
 	/* FIXME: selinux, ACL, Extended Attributes needed? */

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -17,6 +17,8 @@
 #include "prototypes.h"
 #include "shadowlog.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strerrno.h"
 
 #include <assert.h>
 
@@ -34,18 +36,17 @@ static void change_root (const char* newroot);
  */
 extern void process_root_flag (const char* short_opt, int argc, char **argv)
 {
-	/*
-	 * Parse the command line options.
-	 */
-	int i;
-	const char *newroot = NULL, *val;
+	const char *newroot = NULL;
 
-	for (i = 0; i < argc; i++) {
-		val = NULL;
+	for (int i = 0; i < argc; i++) {
+		const char  *val;
+
+		val = strprefix(argv[i], "--root=");
+
 		if (   streq(argv[i], "--root")
-		    || ((strncmp (argv[i], "--root=", 7) == 0)
-			&& (val = argv[i] + 7))
-		    || streq(argv[i], short_opt)) {
+		    || val != NULL
+		    || streq(argv[i], short_opt))
+		{
 			if (NULL != newroot) {
 				fprintf (log_get_logfd(),
 				         _("%s: multiple --root options\n"),
@@ -77,7 +78,7 @@ static void change_root (const char* newroot)
 	if (   (setregid (getgid (), getgid ()) != 0)
 	    || (setreuid (getuid (), getuid ()) != 0)) {
 		fprintf (log_get_logfd(), _("%s: failed to drop privileges (%s)\n"),
-		         log_get_progname(), strerror (errno));
+		         log_get_progname(), strerrno());
 		exit (EXIT_FAILURE);
 	}
 
@@ -91,21 +92,21 @@ static void change_root (const char* newroot)
 	if (access (newroot, F_OK) != 0) {
 		fprintf(log_get_logfd(),
 		        _("%s: cannot access chroot directory %s: %s\n"),
-		        log_get_progname(), newroot, strerror (errno));
+		        log_get_progname(), newroot, strerrno());
 		exit (E_BAD_ARG);
 	}
 
 	if (chroot (newroot) != 0) {
 		fprintf(log_get_logfd(),
 			        _("%s: unable to chroot to directory %s: %s\n"),
-				log_get_progname(), newroot, strerror (errno));
+				log_get_progname(), newroot, strerrno());
 		exit (E_BAD_ARG);
 	}
 
 	if (chdir ("/") != 0) {
 		fprintf(log_get_logfd(),
 			_("%s: cannot chdir in chroot directory %s: %s\n"),
-		        log_get_progname(), newroot, strerror (errno));
+		        log_get_progname(), newroot, strerrno());
 		exit (E_BAD_ARG);
 	}
 }

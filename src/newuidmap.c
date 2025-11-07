@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -13,12 +13,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+
 #include "defines.h"
-#include "prototypes.h"
-#include "subordinateio.h"
 #include "getdef.h"
 #include "idmapping.h"
+#include "prototypes.h"
 #include "shadowlog.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strerrno.h"
+#include "subordinateio.h"
+
 
 /*
  * Global variables
@@ -94,7 +98,7 @@ int main(int argc, char **argv)
 	/* Find the process that needs its user namespace
 	 * uid mapping set.
 	 */
-	if (strlen(target_str) > 3 && strncmp(target_str, "fd:", 3) == 0) {
+	if (strlen(target_str) > 3 && strprefix(target_str, "fd:")) {
 		/* the user passed in a /proc/pid fd for the process */
 		target_str = &target_str[3];
 		proc_dir_fd = get_pidfd_from_fd(target_str);
@@ -119,7 +123,9 @@ int main(int argc, char **argv)
 
 	/* Get the effective uid and effective gid of the target process */
 	if (fstat(proc_dir_fd, &st) < 0) {
-		fprintf(stderr, _("%s: Could not stat directory for target process\n"), Prog);
+		fprintf(stderr,
+		        _("%s: Could not stat directory for target process: %s\n"),
+		        Prog, strerrno());
 		return EXIT_FAILURE;
 	}
 
@@ -138,7 +144,10 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	if (!sub_uid_open(O_RDONLY)) {
+	if (want_subuid_file() && !sub_uid_open(O_RDONLY)) {
+		fprintf (stderr,
+		         _("%s: cannot open %s: %s\n"),
+		        Prog, sub_uid_dbname(), strerrno());
 		return EXIT_FAILURE;
 	}
 
@@ -150,7 +159,8 @@ int main(int argc, char **argv)
 	verify_ranges(pw, ranges, mappings);
 
 	write_mapping(proc_dir_fd, ranges, mappings, "uid_map", pw->pw_uid);
-	sub_uid_close();
+	if (want_subuid_file())
+		sub_uid_close(true);
 
 	return EXIT_SUCCESS;
 }

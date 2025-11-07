@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -19,9 +19,12 @@
 #include "alloc/malloc.h"
 #include "commonio.h"
 #include "defines.h"
+#include "fields.h"
 #include "getdef.h"
 #include "groupio.h"
 #include "prototypes.h"
+#include "shadow/group/sgetgrent.h"
+#include "string/sprintf/aprintf.h"
 #include "string/strcmp/streq.h"
 
 
@@ -182,14 +185,14 @@ int gr_rewind (void)
 	return commonio_next (&group_db);
 }
 
-int gr_close (void)
+int gr_close (bool process_selinux)
 {
-	return commonio_close (&group_db);
+	return commonio_close (&group_db, process_selinux);
 }
 
-int gr_unlock (void)
+int gr_unlock (bool process_selinux)
 {
-	return commonio_unlock (&group_db);
+	return commonio_unlock (&group_db, process_selinux);
 }
 
 void __gr_set_changed (void)
@@ -324,7 +327,8 @@ static /*@null@*/struct commonio_entry *merge_group_entries (
 	}
 
 	/* Concatenate the 2 lines */
-	if (asprintf(&new_line, "%s\n%s", gr1->line, gr2->line) == -1)
+	new_line = aprintf("%s\n%s", gr1->line, gr2->line);
+	if (new_line == NULL)
 		return NULL;
 
 	/* Concatenate the 2 list of members */

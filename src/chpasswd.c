@@ -7,20 +7,23 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
 #include <fcntl.h>
 #include <getopt.h>
 #include <pwd.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef USE_PAM
 #include "pam_defs.h"
 #endif				/* USE_PAM */
-#include "atoi/str2i/str2s.h"
+#include "atoi/str2i.h"
+#include "chkhash.h"
 #include "defines.h"
 #include "nscd.h"
 #include "sssd.h"
@@ -32,10 +35,16 @@
 #include "exitcodes.h"
 #include "shadowlog.h"
 #include "string/strcmp/streq.h"
+#include "string/strerrno.h"
 #include "string/strtok/stpsep.h"
 
 
 #define IS_CRYPT_METHOD(str) ((crypt_method != NULL && streq(crypt_method, str)) ? true : false)
+
+struct option_flags {
+	bool chroot;
+	bool prefix;
+};
 
 /*
  * Global variables
@@ -66,21 +75,21 @@ static bool pw_locked = false;
 static bool spw_locked = false;
 
 /* local function prototypes */
-NORETURN static void fail_exit (int code);
+NORETURN static void fail_exit (int code, bool process_selinux);
 NORETURN static void usage (int status);
-static void process_flags (int argc, char **argv);
+static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (void);
 static void check_perms (void);
-static void open_files (void);
-static void close_files (void);
+static void open_files (struct option_flags *flags);
+static void close_files (struct option_flags *flags);
 
 /*
  * fail_exit - exit with a failure code after unlocking the files
  */
-static void fail_exit (int code)
+static void fail_exit (int code, bool process_selinux)
 {
 	if (pw_locked) {
-		if (pw_unlock () == 0) {
+		if (pw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 			/* continue */
@@ -88,7 +97,7 @@ static void fail_exit (int code)
 	}
 
 	if (spw_locked) {
-		if (spw_unlock () == 0) {
+		if (spw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, spw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
 			/* continue */
@@ -146,7 +155,7 @@ usage (int status)
  *
  *	It will not return if an error is encountered.
  */
-static void process_flags (int argc, char **argv)
+static void process_flags (int argc, char **argv, struct option_flags *flags)
 {
 	int c;
 #if defined(USE_SHA_CRYPT) || defined(USE_BCRYPT) || defined(USE_YESCRYPT)
@@ -186,8 +195,10 @@ static void process_flags (int argc, char **argv)
 			md5flg = true;
 			break;
 		case 'R': /* no-op, handled in process_root_flag () */
+			flags->chroot = true;
 			break;
 		case 'P': /* no-op, handled in process_prefix_flag () */
+			flags->prefix = true;
 			break;
 #if defined(USE_SHA_CRYPT) || defined(USE_BCRYPT) || defined(USE_YESCRYPT)
 		case 's':
@@ -334,8 +345,12 @@ static void check_perms (void)
 /*
  * open_files - lock and open the password databases
  */
-static void open_files (void)
+static void open_files (struct option_flags *flags)
 {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
+
 	/*
 	 * Lock the password file and open it for reading and writing. This
 	 * will bring all of the entries into memory where they may be updated.
@@ -344,13 +359,13 @@ static void open_files (void)
 		fprintf (stderr,
 		         _("%s: cannot lock %s; try again later.\n"),
 		         Prog, pw_dbname ());
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
 	pw_locked = true;
 	if (pw_open (O_CREAT | O_RDWR) == 0) {
 		fprintf (stderr,
 		         _("%s: cannot open %s\n"), Prog, pw_dbname ());
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
 
 	/* Do the same for the shadowed database, if it exist */
@@ -359,14 +374,14 @@ static void open_files (void)
 			fprintf (stderr,
 			         _("%s: cannot lock %s; try again later.\n"),
 			         Prog, spw_dbname ());
-			fail_exit (1);
+			fail_exit (1, process_selinux);
 		}
 		spw_locked = true;
 		if (spw_open (O_CREAT | O_RDWR) == 0) {
 			fprintf (stderr,
 			         _("%s: cannot open %s\n"),
 			         Prog, spw_dbname ());
-			fail_exit (1);
+			fail_exit (1, process_selinux);
 		}
 	}
 }
@@ -374,17 +389,21 @@ static void open_files (void)
 /*
  * close_files - close and unlock the password databases
  */
-static void close_files (void)
+static void close_files (struct option_flags *flags)
 {
+	bool process_selinux;
+
+	process_selinux = !flags->chroot && !flags->prefix;
+
 	if (is_shadow_pwd) {
-		if (spw_close () == 0) {
+		if (spw_close (process_selinux) == 0) {
 			fprintf (stderr,
 			         _("%s: failure while writing changes to %s\n"),
 			         Prog, spw_dbname ());
 			SYSLOG ((LOG_ERR, "failure while writing changes to %s", spw_dbname ()));
-			fail_exit (1);
+			fail_exit (1, process_selinux);
 		}
-		if (spw_unlock () == 0) {
+		if (spw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, spw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
 			/* continue */
@@ -392,14 +411,14 @@ static void close_files (void)
 		spw_locked = false;
 	}
 
-	if (pw_close () == 0) {
+	if (pw_close (process_selinux) == 0) {
 		fprintf (stderr,
 		         _("%s: failure while writing changes to %s\n"),
 		         Prog, pw_dbname ());
 		SYSLOG ((LOG_ERR, "failure while writing changes to %s", pw_dbname ()));
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
-	if (pw_unlock () == 0) {
+	if (pw_unlock (process_selinux) == 0) {
 		fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
 		SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 		/* continue */
@@ -445,15 +464,16 @@ int main (int argc, char **argv)
 	char buf[BUFSIZ];
 	char *name;
 	char *newpwd;
-	char *cp;
 	const char *salt;
 
 #ifdef USE_PAM
 	bool use_pam = true;
 #endif				/* USE_PAM */
 
-	int errors = 0;
-	int line = 0;
+	bool errors = false;
+	intmax_t line = 0;
+	struct option_flags  flags;
+	bool process_selinux;
 
 	log_set_progname(Prog);
 	log_set_logfd(stderr);
@@ -468,7 +488,8 @@ int main (int argc, char **argv)
 	}
 #endif				/* WITH_SELINUX */
 
-	process_flags (argc, argv);
+	process_flags (argc, argv, &flags);
+	process_selinux = !flags.chroot && !flags.prefix;
 
 	salt = get_salt();
 	process_root_flag ("-R", argc, argv);
@@ -490,7 +511,7 @@ int main (int argc, char **argv)
 	{
 		is_shadow_pwd = spw_file_present ();
 
-		open_files ();
+		open_files (&flags);
 	}
 
 	/*
@@ -502,21 +523,21 @@ int main (int argc, char **argv)
 	 * present.
 	 */
 	while (fgets (buf, sizeof buf, stdin) != NULL) {
+		char  *cp;
+
 		line++;
 		if (stpsep(buf, "\n") == NULL) {
 			if (feof (stdin) == 0) {
 				// Drop all remaining characters on this line.
 				while (fgets (buf, sizeof buf, stdin) != NULL) {
-					cp = strchr (buf, '\n');
-					if (cp != NULL) {
+					if (strchr(buf, '\n'))
 						break;
-					}
 				}
 
 				fprintf (stderr,
-				         _("%s: line %d: line too long\n"),
+				         _("%s: line %jd: line too long\n"),
 				         Prog, line);
-				errors++;
+				errors = true;
 				continue;
 			}
 		}
@@ -534,9 +555,9 @@ int main (int argc, char **argv)
 		cp = stpsep(name, ":");
 		if (cp == NULL) {
 			fprintf (stderr,
-			         _("%s: line %d: missing new password\n"),
+			         _("%s: line %jd: missing new password\n"),
 			         Prog, line);
-			errors++;
+			errors = true;
 			continue;
 		}
 		newpwd = cp;
@@ -545,13 +566,28 @@ int main (int argc, char **argv)
 		if (use_pam) {
 			if (do_pam_passwd_non_interactive (Prog, name, newpwd) != 0) {
 				fprintf (stderr,
-				         _("%s: (line %d, user %s) password not changed\n"),
+				         _("%s: (line %jd, user %s) password not changed\n"),
 				         Prog, line, name);
-				errors++;
+				errors = true;
 			}
 		} else
 #endif				/* USE_PAM */
 		{
+
+		/*
+		 * Prevent adding a non valid hash to /etc/shadow and
+		 * potentialy lock account
+		 */
+
+		if (eflg) {
+			if (!is_valid_hash(newpwd)) {
+				fprintf (stderr,
+					_("%s: (line %jd, user %s) invalid password hash\n"),
+					Prog, line, name);
+				errors = true;
+				continue;
+			}
+		}
 		const struct spwd *sp;
 		struct spwd newsp;
 		const struct passwd *pw;
@@ -562,8 +598,8 @@ int main (int argc, char **argv)
 			if (NULL == cp) {
 				fprintf (stderr,
 				         _("%s: failed to crypt password with salt '%s': %s\n"),
-				         Prog, salt, strerror (errno));
-				fail_exit (1);
+				        Prog, salt, strerrno());
+				fail_exit (1, process_selinux);
 			}
 		}
 
@@ -574,9 +610,9 @@ int main (int argc, char **argv)
 		pw = pw_locate (name);
 		if (NULL == pw) {
 			fprintf (stderr,
-			         _("%s: line %d: user '%s' does not exist\n"), Prog,
+			         _("%s: line %jd: user '%s' does not exist\n"), Prog,
 			         line, name);
-			errors++;
+			errors = true;
 			continue;
 		}
 		if (is_shadow_pwd) {
@@ -640,9 +676,9 @@ int main (int argc, char **argv)
 		if (NULL != sp) {
 			if (spw_update (&newsp) == 0) {
 				fprintf (stderr,
-				         _("%s: line %d: failed to prepare the new %s entry '%s'\n"),
+				         _("%s: line %jd: failed to prepare the new %s entry '%s'\n"),
 				         Prog, line, spw_dbname (), newsp.sp_namp);
-				errors++;
+				errors = true;
 				continue;
 			}
 		}
@@ -650,9 +686,9 @@ int main (int argc, char **argv)
 		    || !streq(pw->pw_passwd, SHADOW_PASSWD_STRING)) {
 			if (pw_update (&newpw) == 0) {
 				fprintf (stderr,
-				         _("%s: line %d: failed to prepare the new %s entry '%s'\n"),
+				         _("%s: line %jd: failed to prepare the new %s entry '%s'\n"),
 				         Prog, line, pw_dbname (), newpw.pw_name);
-				errors++;
+				errors = true;
 				continue;
 			}
 		}
@@ -669,7 +705,7 @@ int main (int argc, char **argv)
 	 * With PAM, it is not possible to delay the update of the
 	 * password database.
 	 */
-	if (0 != errors) {
+	if (errors) {
 #ifdef USE_PAM
 		if (!use_pam)
 #endif				/* USE_PAM */
@@ -678,7 +714,7 @@ int main (int argc, char **argv)
 			         _("%s: error detected, changes ignored\n"),
 			         Prog);
 		}
-		fail_exit (1);
+		fail_exit (1, process_selinux);
 	}
 
 #ifdef USE_PAM
@@ -686,7 +722,7 @@ int main (int argc, char **argv)
 #endif				/* USE_PAM */
 	{
 	/* Save the changes */
-		close_files ();
+		close_files (&flags);
 	}
 
 	nscd_flush_cache ("passwd");

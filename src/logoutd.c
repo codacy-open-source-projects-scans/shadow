@@ -6,13 +6,14 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <utmpx.h>
@@ -21,6 +22,7 @@
 #include "prototypes.h"
 #include "shadowlog.h"
 #include "sizeof.h"
+#include "string/strcmp/strneq.h"
 #include "string/strcpy/strncat.h"
 #include "string/strdup/strndupa.h"
 
@@ -171,16 +173,16 @@ main(int argc, char **argv)
 		 * for login sessions will be checked to see if the user
 		 * is permitted to be signed on at this time.
 		 */
-		while ((ut = getutxent()) != NULL) {
+		while (NULL != (ut = getutxent())) {
 			int   tty_fd;
 			char  tty_name[sizeof(ut->ut_line) + 6];  // /dev/ + NUL
 
 			if (ut->ut_type != USER_PROCESS) {
 				continue;
 			}
-			if (ut->ut_user[0] == '\0') {
+			if (STRNEQ(ut->ut_user, ""))
 				continue;
-			}
+
 			if (check_login (ut)) {
 				continue;
 			}

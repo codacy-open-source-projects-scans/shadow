@@ -5,7 +5,7 @@
  */
 
 
-#include <config.h>
+#include "config.h"
 
 #include "agetpass.h"
 
@@ -135,7 +135,7 @@ agetpass(const char *prompt)
 char *
 agetpass_stdin()
 {
-	return agetpass_internal(NULL, RPP_STDIN);
+	return agetpass_internal("", RPP_STDIN);
 }
 
 void

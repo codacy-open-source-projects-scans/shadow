@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -15,6 +15,7 @@
 #include <pwd.h>
 #include <signal.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
 #include <getopt.h>
 
@@ -22,6 +23,7 @@
 #include "defines.h"
 /*@-exitarg@*/
 #include "exitcodes.h"
+#include "fields.h"
 #include "getdef.h"
 #include "nscd.h"
 #ifdef USE_PAM
@@ -31,12 +33,16 @@
 #include "pwauth.h"
 #include "pwio.h"
 #include "shadowlog.h"
+#include "sizeof.h"
 #include "sssd.h"
-#include "string/sprintf/snprintf.h"
+#include "string/sprintf/stpeprintf.h"
 #include "string/strcmp/streq.h"
 #include "string/strcpy/strtcpy.h"
-#include "string/strdup/xstrdup.h"
+#include "string/strdup/strdup.h"
 
+struct option_flags {
+	bool chroot;
+};
 
 /*
  * Global variables.
@@ -46,7 +52,7 @@ static char fullnm[BUFSIZ];
 static char roomno[BUFSIZ];
 static char workph[BUFSIZ];
 static char homeph[BUFSIZ];
-static char slop[BUFSIZ + 1 + 80];
+static char slop[BUFSIZ];
 static bool amroot;
 /* Flags */
 static bool fflg = false;		/* -f - set full name                */
@@ -61,23 +67,22 @@ static bool pw_locked = false;
  */
 
 /* local function prototypes */
-NORETURN static void fail_exit (int code);
+NORETURN static void fail_exit (int code, bool process_selinux);
 NORETURN static void usage (int status);
 static bool may_change_field (int);
 static void new_fields (void);
-static char *copy_field (char *, char *, char *);
-static void process_flags (int argc, char **argv);
+static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_perms (const struct passwd *pw);
-static void update_gecos (const char *user, char *gecos);
+static void update_gecos (const char *user, char *gecos, struct option_flags *flags);
 static void get_old_fields (const char *gecos);
 
 /*
  * fail_exit - exit with an error and do some cleanup
  */
-static void fail_exit (int code)
+static void fail_exit (int code, bool process_selinux)
 {
 	if (pw_locked) {
-		if (pw_unlock () == 0) {
+		if (pw_unlock (process_selinux) == 0) {
 			fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 			/* continue */
@@ -158,9 +163,8 @@ static bool may_change_field (int field)
 		cp = "frwh";
 	}
 
-	if (strchr (cp, field) != NULL) {
+	if (strchr(cp, field))
 		return true;
-	}
 
 	return false;
 }
@@ -205,46 +209,11 @@ static void new_fields (void)
 }
 
 /*
- * copy_field - get the next field from the gecos field
- *
- * copy_field copies the next field from the gecos field, returning a
- * pointer to the field which follows, or NULL if there are no more fields.
- *
- *	in - the current GECOS field
- *	out - where to copy the field to
- *	extra - fields with '=' get copied here
- */
-static char *copy_field (char *in, char *out, char *extra)
-{
-	while (NULL != in) {
-		char  *f;
-
-		f = strsep(&in, ",");
-
-		if (strchr(f, '=') == NULL)
-			break;
-
-		if (NULL != extra) {
-			if (!streq(extra, "")) {
-				strcat (extra, ",");
-			}
-
-			strcat(extra, f);
-		}
-	}
-	if ((NULL != in) && (NULL != out)) {
-		strcpy (out, in);
-	}
-
-	return in;
-}
-
-/*
  * process_flags - parse the command line options
  *
  *	It will not return if an error is encountered.
  */
-static void process_flags (int argc, char **argv)
+static void process_flags (int argc, char **argv, struct option_flags *flags)
 {
 	int c;		/* flag currently being processed    */
 	static struct option long_options[] = {
@@ -310,6 +279,7 @@ static void process_flags (int argc, char **argv)
 			STRTCPY(roomno, optarg);
 			break;
 		case 'R': /* no-op, handled in process_root_flag () */
+			flags->chroot = true;
 			break;
 		case 'u':
 			usage (E_SUCCESS);
@@ -377,7 +347,7 @@ static void check_perms (const struct passwd *pw)
 	 * --marekm
 	 */
 	if (!amroot && getdef_bool ("CHFN_AUTH")) {
-		passwd_check (pw->pw_name, pw->pw_passwd, Prog);
+		passwd_check(pw->pw_name, pw->pw_passwd);
 	}
 
 #else				/* !USE_PAM */
@@ -417,10 +387,13 @@ static void check_perms (const struct passwd *pw)
  *
  *	Commit the user's entry after changing her gecos field.
  */
-static void update_gecos (const char *user, char *gecos)
+static void update_gecos (const char *user, char *gecos, struct option_flags *flags)
 {
 	const struct passwd *pw;	/* The user's password file entry */
 	struct passwd pwent;		/* modified password file entry */
+	bool process_selinux;
+
+	process_selinux = !flags->chroot;
 
 	/*
 	 * Before going any further, raise the ulimit to prevent colliding
@@ -431,7 +404,7 @@ static void update_gecos (const char *user, char *gecos)
 	if (setuid (0) != 0) {
 		fputs (_("Cannot change ID to root.\n"), stderr);
 		SYSLOG ((LOG_ERR, "can't setuid(0)"));
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 	pwd_init ();
 
@@ -443,13 +416,13 @@ static void update_gecos (const char *user, char *gecos)
 		fprintf (stderr,
 		         _("%s: cannot lock %s; try again later.\n"),
 		         Prog, pw_dbname ());
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 	pw_locked = true;
 	if (pw_open (O_CREAT | O_RDWR) == 0) {
 		fprintf (stderr,
 		         _("%s: cannot open %s\n"), Prog, pw_dbname ());
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 	/*
@@ -463,7 +436,7 @@ static void update_gecos (const char *user, char *gecos)
 		fprintf (stderr,
 		         _("%s: user '%s' does not exist in %s\n"),
 		         Prog, user, pw_dbname ());
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 	/*
@@ -481,18 +454,18 @@ static void update_gecos (const char *user, char *gecos)
 		fprintf (stderr,
 		         _("%s: failed to prepare the new %s entry '%s'\n"),
 		         Prog, pw_dbname (), pwent.pw_name);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 
 	/*
 	 * Changes have all been made, so commit them and unlock the file.
 	 */
-	if (pw_close () == 0) {
+	if (pw_close (process_selinux) == 0) {
 		fprintf (stderr, _("%s: failure while writing changes to %s\n"), Prog, pw_dbname ());
 		SYSLOG ((LOG_ERR, "failure while writing changes to %s", pw_dbname ()));
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
-	if (pw_unlock () == 0) {
+	if (pw_unlock (process_selinux) == 0) {
 		fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
 		SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 		/* continue */
@@ -506,49 +479,32 @@ static void update_gecos (const char *user, char *gecos)
  */
 static void get_old_fields (const char *gecos)
 {
-	char *cp;		/* temporary character pointer       */
-	char old_gecos[BUFSIZ];	/* buffer for old GECOS fields       */
+	char        *p;
+	char        old_gecos[BUFSIZ];
+	const char  *f;
 
 	STRTCPY(old_gecos, gecos);
+	p = old_gecos;
 
-	/*
-	 * Now get the full name. It is the first comma separated field in
-	 * the GECOS field.
-	 */
-	cp = copy_field (old_gecos, fflg ? NULL : fullnm, slop);
+	f = strsep(&p, ",");
+	if (!fflg)
+		strcpy(fullnm, f ?: "");
 
-	/*
-	 * Now get the room number. It is the next comma separated field,
-	 * if there is indeed one.
-	 */
-	if (NULL != cp) {
-		cp = copy_field (cp, rflg ? NULL : roomno, slop);
-	}
+	f = strsep(&p, ",");
+	if (!rflg)
+		strcpy(roomno, f ?: "");
 
-	/*
-	 * Now get the work phone number. It is the third field.
-	 */
-	if (NULL != cp) {
-		cp = copy_field (cp, wflg ? NULL : workph, slop);
-	}
+	f = strsep(&p, ",");
+	if (!wflg)
+		strcpy(workph, f ?: "");
 
-	/*
-	 * Now get the home phone number. It is the fourth field.
-	 */
-	if (NULL != cp) {
-		cp = copy_field (cp, hflg ? NULL : homeph, slop);
-	}
+	f = strsep(&p, ",");
+	if (!hflg)
+		strcpy(homeph, f ?: "");
 
-	/*
-	 * Anything left over is "slop".
-	 */
-	if ((NULL != cp) && !oflg) {
-		if (!streq(slop, "")) {
-			strcat (slop, ",");
-		}
-
-		strcat (slop, cp);
-	}
+	/* Anything left over is "slop".  */
+	if (!oflg)
+		strcpy(slop, p ?: "");
 }
 
 /*
@@ -556,7 +512,7 @@ static void get_old_fields (const char *gecos)
  *
  *	It will not return if a field is not valid.
  */
-static void check_fields (void)
+static void check_fields (bool process_selinux)
 {
 	int err;
 	err = valid_field (fullnm, ":,=\n");
@@ -564,7 +520,7 @@ static void check_fields (void)
 		fprintf (stderr, _("%s: name with non-ASCII characters: '%s'\n"), Prog, fullnm);
 	} else if (err < 0) {
 		fprintf (stderr, _("%s: invalid name: '%s'\n"), Prog, fullnm);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 	err = valid_field (roomno, ":,=\n");
 	if (err > 0) {
@@ -572,17 +528,17 @@ static void check_fields (void)
 	} else if (err < 0) {
 		fprintf (stderr, _("%s: invalid room number: '%s'\n"),
 		         Prog, roomno);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 	if (valid_field (workph, ":,=\n") != 0) {
 		fprintf (stderr, _("%s: invalid work phone: '%s'\n"),
 		         Prog, workph);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 	if (valid_field (homeph, ":,=\n") != 0) {
 		fprintf (stderr, _("%s: invalid home phone: '%s'\n"),
 		         Prog, homeph);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 	err = valid_field (slop, ":\n");
 	if (err > 0) {
@@ -591,7 +547,7 @@ static void check_fields (void)
 		fprintf (stderr,
 		         _("%s: '%s' contains illegal characters\n"),
 		         Prog, slop);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
 }
 
@@ -613,9 +569,11 @@ static void check_fields (void)
  */
 int main (int argc, char **argv)
 {
-	char                 new_gecos[BUFSIZ];
-	char                 *user;
+	char                 new_gecos[80];
+	char                 *user, *p, *e;
 	const struct passwd  *pw;
+	struct option_flags  flags;
+	bool                 process_selinux;
 
 	sanitize_env ();
 	check_fds ();
@@ -638,7 +596,8 @@ int main (int argc, char **argv)
 	OPENLOG (Prog);
 
 	/* parse the command line options */
-	process_flags (argc, argv);
+	process_flags (argc, argv, &flags);
+	process_selinux = !flags.chroot;
 
 	/*
 	 * Get the name of the user to check. It is either the command line
@@ -647,14 +606,14 @@ int main (int argc, char **argv)
 	if (optind < argc) {
 		if (!is_valid_user_name (argv[optind])) {
 			fprintf (stderr, _("%s: Provided user name is not a valid name\n"), Prog);
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
 		user = argv[optind];
 		pw = xgetpwnam (user);
 		if (NULL == pw) {
 			fprintf (stderr, _("%s: user '%s' does not exist\n"), Prog,
 			         user);
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
 	} else {
 		pw = get_my_pwent ();
@@ -664,7 +623,7 @@ int main (int argc, char **argv)
 			         Prog);
 			SYSLOG ((LOG_WARN, "Cannot determine the user name of the caller (UID %lu)",
 			         (unsigned long) getuid ()));
-			fail_exit (E_NOPERM);
+			fail_exit (E_NOPERM, process_selinux);
 		}
 		user = xstrdup (pw->pw_name);
 	}
@@ -689,23 +648,25 @@ int main (int argc, char **argv)
 	/*
 	 * Check all of the fields for valid information
 	 */
-	check_fields ();
+	check_fields (process_selinux);
 
-	/*
-	 * Build the new GECOS field by plastering all the pieces together,
-	 * if they will fit ...
-	 */
-	if ((strlen (fullnm) + strlen (roomno) + strlen (workph) +
-	     strlen (homeph) + strlen (slop)) > (unsigned int) 80) {
+	/* Build the new GECOS field by plastering all the pieces together.  */
+	p = new_gecos;
+	e = new_gecos + countof(new_gecos);
+	p = stpeprintf(p, e, "%s", fullnm);
+	p = stpeprintf(p, e, ",%s", roomno);
+	p = stpeprintf(p, e, ",%s", workph);
+	p = stpeprintf(p, e, ",%s", homeph);
+	if (!streq(slop, ""))
+		p = stpeprintf(p, e, ",%s", slop);
+
+	if (p == e || p == NULL) {
 		fprintf (stderr, _("%s: fields too long\n"), Prog);
-		fail_exit (E_NOPERM);
+		fail_exit (E_NOPERM, process_selinux);
 	}
-	SNPRINTF(new_gecos, "%s,%s,%s,%s%s%s",
-	         fullnm, roomno, workph, homeph,
-	         (!streq(slop, "")) ? "," : "", slop);
 
 	/* Rewrite the user's gecos in the passwd file */
-	update_gecos (user, new_gecos);
+	update_gecos (user, new_gecos, &flags);
 
 	SYSLOG ((LOG_INFO, "changed user '%s' information", user));
 

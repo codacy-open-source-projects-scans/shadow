@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <config.h>
+#include "config.h"
 
 #ident "$Id$"
 
@@ -35,8 +35,11 @@
 #include "shadowlog_internal.h"
 #include "sssd.h"
 #include "string/memset/memzero.h"
+#include "string/sprintf/aprintf.h"
 #include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
+#include "string/strcmp/strprefix.h"
+#include "string/strerrno.h"
 #include "string/strtok/stpsep.h"
 
 
@@ -74,17 +77,10 @@ int lrename (const char *old, const char *new)
 {
 	int res;
 	char *r = NULL;
-
-#ifndef __GLIBC__
-	char resolved_path[PATH_MAX];
-#endif				/* !__GLIBC__ */
 	struct stat sb;
+
 	if (lstat (new, &sb) == 0 && S_ISLNK (sb.st_mode)) {
-#ifdef __GLIBC__ /* now a POSIX.1-2008 feature */
 		r = realpath (new, NULL);
-#else				/* !__GLIBC__ */
-		r = realpath (new, resolved_path);
-#endif				/* !__GLIBC__ */
 		if (NULL == r) {
 			perror ("realpath in lrename()");
 		} else {
@@ -94,9 +90,7 @@ int lrename (const char *old, const char *new)
 
 	res = rename (old, new);
 
-#ifdef __GLIBC__
 	free (r);
-#endif				/* __GLIBC__ */
 
 	return res;
 }
@@ -109,7 +103,7 @@ static int check_link_count (const char *file, bool log)
 		if (log) {
 			(void) fprintf (shadow_logfd,
 			                "%s: %s file stat error: %s\n",
-			                shadow_progname, file, strerror (errno));
+			                shadow_progname, file, strerrno());
 		}
 		return 0;
 	}
@@ -140,7 +134,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		if (log) {
 			(void) fprintf (shadow_logfd,
 			                "%s: %s: %s\n",
-			                shadow_progname, file, strerror (errno));
+			                shadow_progname, file, strerrno());
 		}
 		return 0;
 	}
@@ -152,7 +146,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		if (log) {
 			(void) fprintf (shadow_logfd,
 			                "%s: %s file write error: %s\n",
-			                shadow_progname, file, strerror (errno));
+			                shadow_progname, file, strerrno());
 		}
 		(void) close (fd);
 		unlink (file);
@@ -162,7 +156,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		if (log) {
 			(void) fprintf (shadow_logfd,
 			                "%s: %s file sync error: %s\n",
-			                shadow_progname, file, strerror (errno));
+			                shadow_progname, file, strerrno());
 		}
 		(void) close (fd);
 		unlink (file);
@@ -181,7 +175,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		if (log) {
 			(void) fprintf (shadow_logfd,
 			                "%s: %s: %s\n",
-			                shadow_progname, lock, strerror (errno));
+			                shadow_progname, lock, strerrno());
 		}
 		unlink (file);
 		errno = EINVAL;
@@ -224,7 +218,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		if (log) {
 			(void) fprintf (shadow_logfd,
 			                "%s: cannot get lock %s: %s\n",
-			                shadow_progname, lock, strerror (errno));
+			                shadow_progname, lock, strerrno());
 		}
 		unlink (file);
 		return 0;
@@ -237,7 +231,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		if (log) {
 			(void) fprintf (shadow_logfd,
 			                "%s: cannot get lock %s: %s\n",
-			                shadow_progname, lock, strerror (errno));
+			                shadow_progname, lock, strerrno());
 		}
 	}
 
@@ -335,9 +329,8 @@ static void free_linked_list (struct commonio_db *db)
 
 		free (p->line);
 
-		if (NULL != p->eptr) {
-			db->ops->free (p->eptr);
-		}
+		if (NULL != p->eptr)
+			db->ops->cio_free(p->eptr);
 
 		free (p);
 	}
@@ -369,9 +362,12 @@ int commonio_lock_nowait (struct commonio_db *db, bool log)
 		return 1;
 	}
 
-	if (asprintf(&file, "%s.%ju", db->filename, (uintmax_t) getpid()) == -1)
+	file = aprintf("%s.%ju", db->filename, (uintmax_t) getpid());
+	if (file == NULL)
 		goto cleanup_ENOMEM;
-	if (asprintf(&lock, "%s.lock", db->filename) == -1)
+
+	lock = aprintf("%s.lock", db->filename);
+	if (lock == NULL)
 		goto cleanup_ENOMEM;
 
 	if (do_lock_file (file, lock, log) != 0) {
@@ -471,13 +467,13 @@ static void dec_lock_count (void)
 }
 
 
-int commonio_unlock (struct commonio_db *db)
+int commonio_unlock (struct commonio_db *db, bool process_selinux)
 {
 	char  lock[1029];
 
 	if (db->isopen) {
 		db->readonly = true;
-		if (commonio_close (db) == 0) {
+		if (commonio_close (db, process_selinux) == 0) {
 			if (db->locked) {
 				dec_lock_count ();
 			}
@@ -524,7 +520,7 @@ static void add_one_entry (struct commonio_db *db,
 
 static bool name_is_nis (const char *name)
 {
-	return (('+' == name[0]) || ('-' == name[0]));
+	return strprefix(name, "+") || strprefix(name, "-");
 }
 
 
@@ -552,7 +548,7 @@ static void add_one_entry_nis (struct commonio_db *db,
 	struct commonio_entry *p;
 
 	for (p = db->head; NULL != p; p = p->next) {
-		if (name_is_nis (p->eptr ? db->ops->getname (p->eptr)
+		if (name_is_nis (p->eptr ? db->ops->cio_getname(p->eptr)
 		                         : p->line)) {
 			/*@-mustfreeonly@*/
 			newp->next = p;
@@ -642,7 +638,7 @@ int commonio_open (struct commonio_db *db, int mode)
 	if (NULL == buf)
 		goto cleanup_errno;
 
-	while (db->ops->fgets (buf, buflen, db->fp) == buf) {
+	while (db->ops->cio_fgets(buf, buflen, db->fp) == buf) {
 		struct commonio_entry  *p;
 
 		while (   (strrchr (buf, '\n') == NULL)
@@ -655,11 +651,8 @@ int commonio_open (struct commonio_db *db, int mode)
 				goto cleanup_errno;
 
 			len = strlen (buf);
-			if (db->ops->fgets (buf + len,
-			                    (int) (buflen - len),
-			                    db->fp) == NULL) {
+			if (db->ops->cio_fgets(buf + len, buflen - len, db->fp) == NULL)
 				goto cleanup_buf;
-			}
 		}
 		stpsep(buf, "\n");
 
@@ -671,9 +664,9 @@ int commonio_open (struct commonio_db *db, int mode)
 		if (name_is_nis (line)) {
 			eptr = NULL;
 		} else {
-			eptr = db->ops->parse (line);
+			eptr = db->ops->cio_parse(line);
 			if (NULL != eptr) {
-				eptr = db->ops->dup (eptr);
+				eptr = db->ops->cio_dup(eptr);
 				if (NULL == eptr) {
 					goto cleanup_line;
 				}
@@ -698,7 +691,7 @@ int commonio_open (struct commonio_db *db, int mode)
 		goto cleanup_errno;
 	}
 
-	if ((NULL != db->ops->open_hook) && (db->ops->open_hook () == 0)) {
+	if ((NULL != db->ops->cio_open_hook) && (db->ops->cio_open_hook() == 0)) {
 		goto cleanup_errno;
 	}
 
@@ -706,9 +699,8 @@ int commonio_open (struct commonio_db *db, int mode)
 	return 1;
 
       cleanup_entry:
-	if (NULL != eptr) {
-		db->ops->free (eptr);
-	}
+	if (NULL != eptr)
+		db->ops->cio_free(eptr);
       cleanup_line:
 	free (line);
       cleanup_buf:
@@ -824,14 +816,14 @@ int commonio_sort_wrt (struct commonio_db *shadow,
 		if (NULL == pw_ptr->eptr) {
 			continue;
 		}
-		name = passwd->ops->getname (pw_ptr->eptr);
+		name = passwd->ops->cio_getname(pw_ptr->eptr);
 		for (spw_ptr = shadow->head;
 		     NULL != spw_ptr;
 		     spw_ptr = spw_ptr->next) {
 			if (NULL == spw_ptr->eptr) {
 				continue;
 			}
-			if (streq(name, shadow->ops->getname(spw_ptr->eptr)))
+			if (streq(name, shadow->ops->cio_getname(spw_ptr->eptr)))
 				break;
 		}
 		if (NULL == spw_ptr) {
@@ -873,13 +865,13 @@ static int write_all (const struct commonio_db *db)
 		if (p->changed) {
 			eptr = p->eptr;
 			assert (NULL != eptr);
-			if (db->ops->put (eptr, db->fp) != 0) {
+			if (db->ops->cio_put(eptr, db->fp) != 0) {
 				return -1;
 			}
 		} else if (NULL != p->line) {
-			if (db->ops->fputs (p->line, db->fp) == EOF) {
+			if (db->ops->cio_fputs(p->line, db->fp) == EOF)
 				return -1;
-			}
+
 			if (putc ('\n', db->fp) == EOF) {
 				return -1;
 			}
@@ -889,9 +881,9 @@ static int write_all (const struct commonio_db *db)
 }
 
 
-int commonio_close (struct commonio_db *db)
+int commonio_close (struct commonio_db *db, bool process_selinux)
 {
-	int          errors = 0;
+	bool         errors = false;
 	char         buf[1024];
 	struct stat  sb;
 
@@ -909,7 +901,7 @@ int commonio_close (struct commonio_db *db)
 		goto success;
 	}
 
-	if ((NULL != db->ops->close_hook) && (db->ops->close_hook () == 0)) {
+	if ((NULL != db->ops->cio_close_hook) && (db->ops->cio_close_hook() == 0)) {
 		goto fail;
 	}
 
@@ -931,26 +923,28 @@ int commonio_close (struct commonio_db *db)
 		}
 
 #ifdef WITH_SELINUX
-		if (set_selinux_file_context (db->filename, S_IFREG) != 0) {
-			errors++;
+		if (process_selinux
+		    && set_selinux_file_context (db->filename, S_IFREG) != 0) {
+			errors = true;
 		}
 #endif
 		if (create_backup (buf, db->fp) != 0) {
-			errors++;
+			errors = true;
 		}
 
 		if (fclose (db->fp) != 0) {
-			errors++;
+			errors = true;
 		}
 
 		db->fp = NULL;
 
 #ifdef WITH_SELINUX
-		if (reset_selinux_file_context () != 0) {
-			errors++;
+		if (process_selinux
+		    && reset_selinux_file_context () != 0) {
+			errors = true;
 		}
 #endif
-		if (errors != 0)
+		if (errors)
 			goto fail;
 	} else {
 		/*
@@ -965,8 +959,9 @@ int commonio_close (struct commonio_db *db)
 		goto fail;
 
 #ifdef WITH_SELINUX
-	if (set_selinux_file_context (db->filename, S_IFREG) != 0) {
-		errors++;
+	if (process_selinux
+	    && set_selinux_file_context (db->filename, S_IFREG) != 0) {
+		errors = true;
 	}
 #endif
 
@@ -976,24 +971,24 @@ int commonio_close (struct commonio_db *db)
 	}
 
 	if (write_all (db) != 0) {
-		errors++;
+		errors = true;
 	}
 
 	if (fflush (db->fp) != 0) {
-		errors++;
+		errors = true;
 	}
 
 	if (fsync (fileno (db->fp)) != 0) {
-		errors++;
+		errors = true;
 	}
 
 	if (fclose (db->fp) != 0) {
-		errors++;
+		errors = true;
 	}
 
 	db->fp = NULL;
 
-	if (errors != 0) {
+	if (errors) {
 		unlink (buf);
 		goto fail;
 	}
@@ -1003,7 +998,8 @@ int commonio_close (struct commonio_db *db)
 	}
 
 #ifdef WITH_SELINUX
-	if (reset_selinux_file_context () != 0) {
+	if (process_selinux
+	    && reset_selinux_file_context () != 0) {
 		goto fail;
 	}
 #endif
@@ -1011,11 +1007,11 @@ int commonio_close (struct commonio_db *db)
 	nscd_need_reload = true;
 	goto success;
       fail:
-	errors++;
+	errors = true;
       success:
 
 	free_linked_list (db);
-	return errors == 0;
+	return !errors;
 }
 
 static /*@dependent@*/ /*@null@*/struct commonio_entry *next_entry_by_name (
@@ -1033,7 +1029,7 @@ static /*@dependent@*/ /*@null@*/struct commonio_entry *next_entry_by_name (
 	for (p = pos; NULL != p; p = p->next) {
 		ep = p->eptr;
 		if (   (NULL != ep)
-		    && streq(db->ops->getname(ep), name)) {
+		    && streq(db->ops->cio_getname(ep), name)) {
 			break;
 		}
 	}
@@ -1057,19 +1053,19 @@ int commonio_update (struct commonio_db *db, const void *eptr)
 		errno = EINVAL;
 		return 0;
 	}
-	nentry = db->ops->dup (eptr);
+	nentry = db->ops->cio_dup(eptr);
 	if (NULL == nentry) {
 		errno = ENOMEM;
 		return 0;
 	}
-	p = find_entry_by_name (db, db->ops->getname (eptr));
+	p = find_entry_by_name(db, db->ops->cio_getname(eptr));
 	if (NULL != p) {
-		if (next_entry_by_name (db, p->next, db->ops->getname (eptr)) != NULL) {
-			fprintf (shadow_logfd, _("Multiple entries named '%s' in %s. Please fix this with pwck or grpck.\n"), db->ops->getname (eptr), db->filename);
-			db->ops->free (nentry);
+		if (next_entry_by_name(db, p->next, db->ops->cio_getname(eptr)) != NULL) {
+			fprintf(shadow_logfd, _("Multiple entries named '%s' in %s. Please fix this with pwck or grpck.\n"), db->ops->cio_getname(eptr), db->filename);
+			db->ops->cio_free(nentry);
 			return 0;
 		}
-		db->ops->free (p->eptr);
+		db->ops->cio_free(p->eptr);
 		p->eptr = nentry;
 		p->changed = true;
 		db->cursor = p;
@@ -1080,7 +1076,7 @@ int commonio_update (struct commonio_db *db, const void *eptr)
 	/* not found, new entry */
 	p = MALLOC(1, struct commonio_entry);
 	if (NULL == p) {
-		db->ops->free (nentry);
+		db->ops->cio_free(nentry);
 		errno = ENOMEM;
 		return 0;
 	}
@@ -1109,7 +1105,7 @@ int commonio_append (struct commonio_db *db, const void *eptr)
 		errno = EINVAL;
 		return 0;
 	}
-	nentry = db->ops->dup (eptr);
+	nentry = db->ops->cio_dup(eptr);
 	if (NULL == nentry) {
 		errno = ENOMEM;
 		return 0;
@@ -1117,7 +1113,7 @@ int commonio_append (struct commonio_db *db, const void *eptr)
 	/* new entry */
 	p = MALLOC(1, struct commonio_entry);
 	if (NULL == p) {
-		db->ops->free (nentry);
+		db->ops->cio_free(nentry);
 		errno = ENOMEM;
 		return 0;
 	}
@@ -1178,9 +1174,8 @@ int commonio_remove (struct commonio_db *db, const char *name)
 
 	free (p->line);
 
-	if (NULL != p->eptr) {
-		db->ops->free (p->eptr);
-	}
+	if (NULL != p->eptr)
+		db->ops->cio_free(p->eptr);
 
 	free(p);
 
