@@ -751,11 +751,7 @@ static int get_groups (char *list, struct option_flags *flags)
 	/*
 	 * Free previous group list before creating a new one.
 	 */
-	int i = 0;
-	while (NULL != user_groups[i]) {
-		free(user_groups[i]);
-		user_groups[i++] = NULL;
-	}
+	free_list(user_groups);
 
 	if (streq(list, "")) {
 		return 0;
@@ -1556,6 +1552,12 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 		if (getdef_bool ("CREATE_HOME")) {
 			mflg = true;
 		}
+	}
+
+	if (rflg && !Gflg && do_grp_update) {
+		/* Do not automatically add supplements groups for system users. */
+		free_list(user_groups);
+		do_grp_update = false;
 	}
 
 	if (Mflg) {
