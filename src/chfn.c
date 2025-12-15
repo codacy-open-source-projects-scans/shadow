@@ -73,7 +73,7 @@ static bool may_change_field (int);
 static void new_fields (void);
 static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_perms (const struct passwd *pw);
-static void update_gecos (const char *user, char *gecos, struct option_flags *flags);
+static void update_gecos(const char *user, char *gecos, const struct option_flags *flags);
 static void get_old_fields (const char *gecos);
 
 /*
@@ -180,31 +180,31 @@ static void new_fields (void)
 	puts (_("Enter the new value, or press ENTER for the default"));
 
 	if (may_change_field ('f')) {
-		change_field (fullnm, sizeof fullnm, _("Full Name"));
+		change_field(fullnm, sizeof(fullnm), _("Full Name"));
 	} else {
 		printf (_("\t%s: %s\n"), _("Full Name"), fullnm);
 	}
 
 	if (may_change_field ('r')) {
-		change_field (roomno, sizeof roomno, _("Room Number"));
+		change_field(roomno, sizeof(roomno), _("Room Number"));
 	} else {
 		printf (_("\t%s: %s\n"), _("Room Number"), roomno);
 	}
 
 	if (may_change_field ('w')) {
-		change_field (workph, sizeof workph, _("Work Phone"));
+		change_field(workph, sizeof(workph), _("Work Phone"));
 	} else {
 		printf (_("\t%s: %s\n"), _("Work Phone"), workph);
 	}
 
 	if (may_change_field ('h')) {
-		change_field (homeph, sizeof homeph, _("Home Phone"));
+		change_field(homeph, sizeof(homeph), _("Home Phone"));
 	} else {
 		printf (_("\t%s: %s\n"), _("Home Phone"), homeph);
 	}
 
 	if (amroot) {
-		change_field (slop, sizeof slop, _("Other"));
+		change_field(slop, sizeof(slop), _("Other"));
 	}
 }
 
@@ -244,7 +244,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 				exit (E_NOPERM);
 			}
 			fflg = true;
-			STRTCPY(fullnm, optarg);
+			strtcpy_a(fullnm, optarg);
 			break;
 		case 'h':
 			if (!may_change_field ('h')) {
@@ -253,7 +253,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 				exit (E_NOPERM);
 			}
 			hflg = true;
-			STRTCPY(homeph, optarg);
+			strtcpy_a(homeph, optarg);
 			break;
 		case 'o':
 			if (!amroot) {
@@ -267,7 +267,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 				         _("%s: fields too long\n"), Prog);
 				exit (E_NOPERM);
 			}
-			STRTCPY(slop, optarg);
+			strtcpy_a(slop, optarg);
 			break;
 		case 'r':
 			if (!may_change_field ('r')) {
@@ -276,7 +276,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 				exit (E_NOPERM);
 			}
 			rflg = true;
-			STRTCPY(roomno, optarg);
+			strtcpy_a(roomno, optarg);
 			break;
 		case 'R': /* no-op, handled in process_root_flag () */
 			flags->chroot = true;
@@ -291,7 +291,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 				exit (E_NOPERM);
 			}
 			wflg = true;
-			STRTCPY(workph, optarg);
+			strtcpy_a(workph, optarg);
 			break;
 		default:
 			usage (E_USAGE);
@@ -387,7 +387,7 @@ static void check_perms (const struct passwd *pw)
  *
  *	Commit the user's entry after changing her gecos field.
  */
-static void update_gecos (const char *user, char *gecos, struct option_flags *flags)
+static void update_gecos(const char *user, char *gecos, const struct option_flags *flags)
 {
 	const struct passwd *pw;	/* The user's password file entry */
 	struct passwd pwent;		/* modified password file entry */
@@ -483,7 +483,7 @@ static void get_old_fields (const char *gecos)
 	char        old_gecos[BUFSIZ];
 	const char  *f;
 
-	STRTCPY(old_gecos, gecos);
+	strtcpy_a(old_gecos, gecos);
 	p = old_gecos;
 
 	f = strsep(&p, ",");
@@ -572,7 +572,7 @@ int main (int argc, char **argv)
 	char                 new_gecos[80];
 	char                 *user, *p, *e;
 	const struct passwd  *pw;
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false};
 	bool                 process_selinux;
 
 	sanitize_env ();

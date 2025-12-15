@@ -16,6 +16,7 @@
 #include <sys/types.h>
 #include <time.h>
 
+#include "attr.h"
 #include "defines.h"
 #include "prototypes.h"
 #include "string/memset/memzero.h"
@@ -34,7 +35,7 @@ void dolastlog (
 	struct lastlog *ll,
 	const struct passwd *pw,
 	/*@unique@*/const char *line,
-	/*@unique@*/const char *host)
+	MAYBE_UNUSED /*@unique@*/const char *host)
 {
 	int fd;
 	off_t offset;
@@ -55,7 +56,7 @@ void dolastlog (
 	 * for this UID.  Negative UID's will create problems, but ...
 	 */
 
-	offset = (off_t) pw->pw_uid * sizeof newlog;
+	offset = (off_t) pw->pw_uid * sizeof(newlog);
 
 	if (lseek (fd, offset, SEEK_SET) != offset) {
 		SYSLOG ((LOG_WARN,
@@ -71,8 +72,8 @@ void dolastlog (
 	 * the way we read the old one in.
 	 */
 
-	if (read (fd, &newlog, sizeof newlog) != (ssize_t) sizeof newlog) {
-		memzero (&newlog, sizeof newlog);
+	if (read(fd, &newlog, sizeof(newlog)) != (ssize_t) sizeof(newlog)) {
+		memzero(&newlog, sizeof(newlog));
 	}
 	if (NULL != ll) {
 		*ll = newlog;
@@ -81,12 +82,12 @@ void dolastlog (
 	ll_time = newlog.ll_time;
 	ll_time = time(NULL);
 	newlog.ll_time = ll_time;
-	STRTCPY(newlog.ll_line, line);
+	strtcpy_a(newlog.ll_line, line);
 #if HAVE_LL_HOST
-	STRNCPY(newlog.ll_host, host);
+	strncpy_a(newlog.ll_host, host);
 #endif
 	if (   (lseek (fd, offset, SEEK_SET) != offset)
-	    || (write_full(fd, &newlog, sizeof newlog) == -1)) {
+	    || (write_full(fd, &newlog, sizeof(newlog)) == -1)) {
 		goto err_write;
 	}
 

@@ -68,7 +68,7 @@ static const char *const noslash[] = {
  */
 void initenv (void)
 {
-	newenvp = XMALLOC(NEWENVP_STEP, char *);
+	newenvp = xmalloc_T(NEWENVP_STEP, char *);
 	*newenvp = NULL;
 }
 
@@ -135,7 +135,7 @@ void addenv (const char *string, /*@null@*/const char *value)
 
 		update_environ = (environ == newenvp);
 
-		newenvp = XREALLOC(newenvp, newenvc + NEWENVP_STEP, char *);
+		newenvp = xrealloc_T(newenvp, newenvc + NEWENVP_STEP, char *);
 
 		/*
 		 * If this is our current environment, update
@@ -164,13 +164,13 @@ void set_env (int argc, char *const *argv)
 	char  *cp;
 
 	for (; argc > 0; argc--, argv++) {
-		if (strlen (*argv) >= sizeof variable) {
+		if (strlen(*argv) >= sizeof(variable)) {
 			continue;	/* ignore long entries */
 		}
 
 		cp = strchr (*argv, '=');
 		if (NULL == cp) {
-			assert(SNPRINTF(variable, "L%d", noname) != -1);
+			assert(stprintf_a(variable, "L%d", noname) != -1);
 			noname++;
 			addenv (variable, *argv);
 		} else {

@@ -115,7 +115,7 @@ static void execve_shell (const char *shellname,
                           char *args[],
                           char *const envp[]);
 #ifdef USE_PAM
-static void kill_child (MAYBE_UNUSED int s);
+static void kill_child(int);
 static void prepare_pam_close_session (void);
 #else				/* !USE_PAM */
 static void die (int);
@@ -169,7 +169,8 @@ static bool iswheel (const char *username)
 	return is_on_list (grp->gr_mem, username);
 }
 #else				/* USE_PAM */
-static void kill_child (MAYBE_UNUSED int s)
+static void
+kill_child(int)
 {
 	if (0 != pid_child) {
 		(void) kill (-pid_child, SIGKILL);
@@ -250,7 +251,7 @@ static void execve_shell (const char *shellname,
 		while (NULL != args[n_args]) {
 			n_args++;
 		}
-		targs = XMALLOC(n_args + 3, char *);
+		targs = xmalloc_T(n_args + 3, char *);
 		targs[0] = "sh";
 		targs[1] = "-";
 		targs[2] = xstrdup (shellname);
@@ -394,8 +395,8 @@ static void prepare_pam_close_session (void)
 		              stderr);
 		(void) kill (-pid_child, caught);
 
-		SNPRINTF(kill_msg, _(" ...killed.\n"));
-		SNPRINTF(wait_msg, _(" ...waiting for child to terminate.\n"));
+		stprintf_a(kill_msg, _(" ...killed.\n"));
+		stprintf_a(wait_msg, _(" ...waiting for child to terminate.\n"));
 
 		/* Any signals other than SIGCHLD and SIGALRM will no longer have any effect,
 		 * so it's time to block all of them. */
@@ -686,7 +687,7 @@ static /*@only@*/struct passwd * do_check_perms (void)
 		SYSLOG ((LOG_INFO,
 		         "Change user from '%s' to '%s' as requested by PAM",
 		         name, tmp_name));
-		if (STRTCPY(name, tmp_name) == -1) {
+		if (strtcpy_a(name, tmp_name) == -1) {
 			fprintf (stderr, _("Overlong user name '%s'\n"),
 			         tmp_name);
 			SYSLOG ((LOG_NOTICE, "Overlong user name '%s'",
@@ -785,7 +786,7 @@ save_caller_context(void)
 		         (unsigned long) caller_uid));
 		su_failure (caller_tty, true); /* unknown target UID*/
 	}
-	STRTCPY(caller_name, pw->pw_name);
+	strtcpy_a(caller_name, pw->pw_name);
 
 #ifndef USE_PAM
 #ifdef SU_ACCESS
@@ -861,7 +862,7 @@ static void process_flags (int argc, char **argv)
 	}
 
 	if (optind < argc) {
-		STRTCPY(name, argv[optind++]);	/* use this login id */
+		strtcpy_a(name, argv[optind++]);  /* use this login id */
 	}
 	if (streq(name, "")) {		/* use default user */
 		struct passwd *root_pw = getpwnam ("root");

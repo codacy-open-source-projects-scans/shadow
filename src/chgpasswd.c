@@ -23,7 +23,7 @@
 #include "pam_defs.h"
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
-#include "atoi/str2i.h"
+#include "atoi/a2i.h"
 #include "defines.h"
 #include "nscd.h"
 #include "sssd.h"
@@ -82,7 +82,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (void);
 static void check_perms (void);
 static void open_files (bool process_selinux);
-static void close_files (struct option_flags *flags);
+static void close_files(const struct option_flags *flags);
 
 /*
  * fail_exit - exit with a failure code after unlocking the files
@@ -386,7 +386,7 @@ static void open_files (bool process_selinux)
 /*
  * close_files - close and unlock the group databases
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -440,7 +440,7 @@ int main (int argc, char **argv)
 	struct group newgr;
 	bool errors = false;
 	intmax_t line = 0;
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false};
 	bool process_selinux;
 
 	log_set_progname(Prog);
@@ -476,7 +476,7 @@ int main (int argc, char **argv)
 	 * group entry for each group will be looked up in the appropriate
 	 * file (gshadow or group) and the password changed.
 	 */
-	while (fgets (buf, (int) sizeof buf, stdin) != NULL) {
+	while (fgets(buf, sizeof(buf), stdin) != NULL) {
 		line++;
 		if (stpsep(buf, "\n") == NULL) {
 			fprintf (stderr, _("%s: line %jd: line too long\n"),

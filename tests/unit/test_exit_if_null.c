@@ -16,7 +16,6 @@
 #include <cmocka.h>
 
 #include "sizeof.h"
-#include "string/strcmp/streq.h"
 
 
 #define assert_unreachable()  assert_true(0)
@@ -27,10 +26,10 @@
 static jmp_buf  jmpb;
 
 
-void __wrap_exit(int status);
+void __wrap_exit(int);
 
-static void test_exit_if_null_exit(void **state);
-static void test_exit_if_null_ok(void **state);
+static void test_exit_if_null_exit(void **);
+static void test_exit_if_null_ok(void **);
 
 
 int
@@ -46,14 +45,14 @@ main(void)
 
 
 void
-__wrap_exit(int status)
+__wrap_exit(int)
 {
 	longjmp(jmpb, EXIT_CALLED);
 }
 
 
 static void
-test_exit_if_null_exit(void **state)
+test_exit_if_null_exit(void **)
 {
 	char *volatile  p;
 
@@ -62,11 +61,11 @@ test_exit_if_null_exit(void **state)
 	switch (setjmp(jmpb)) {
 	case 0:
 		p = "called";
-		p = XMALLOC(SIZE_MAX, char);
+		p = xmalloc_T(SIZE_MAX, char);
 		assert_unreachable();
 		break;
 	case EXIT_CALLED:
-		assert_true(streq(p, "called"));
+		assert_string_equal(p, "called");
 		p = "test_ok";
 		break;
 	default:
@@ -74,24 +73,24 @@ test_exit_if_null_exit(void **state)
 		break;
 	}
 
-	assert_true(streq(p, "test_ok"));
+	assert_string_equal(p, "test_ok");
 }
 
 
 static void
-test_exit_if_null_ok(void **state)
+test_exit_if_null_ok(void **)
 {
 	char  *p;
 
 	static const char  foo[] = "foo1bar";
 
-	p = XMALLOC(countof(foo), char);
+	p = xmalloc_T(countof(foo), char);
 	assert_true(p != NULL);
 	strcpy(p, foo);
 	assert_string_equal(p, "foo1bar");
 	free(p);
 
-	p = XMALLOC(0, char);
+	p = xmalloc_T(0, char);
 	assert_true(p != NULL);
 	free(p);
 }

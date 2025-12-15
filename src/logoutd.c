@@ -56,8 +56,8 @@ check_login(const struct utmpx *ut)
 	char    *line;
 	time_t  now;
 
-	user = STRNDUPA(ut->ut_user);
-	line = STRNDUPA(ut->ut_line);
+	user = strndupa_a(ut->ut_user);
+	line = strndupa_a(ut->ut_line);
 
 	now = time(NULL);
 
@@ -116,7 +116,7 @@ static void send_mesg_to_tty (int tty_fd)
  *	off from the system.
  */
 int
-main(int argc, char **argv)
+main(int argc, char *[])
 {
 	pid_t  pid;
 
@@ -180,7 +180,7 @@ main(int argc, char **argv)
 			if (ut->ut_type != USER_PROCESS) {
 				continue;
 			}
-			if (STRNEQ(ut->ut_user, ""))
+			if (strneq_a(ut->ut_user, ""))
 				continue;
 
 			if (check_login (ut)) {
@@ -207,7 +207,7 @@ main(int argc, char **argv)
 			else
 				strcpy(tty_name, "");
 
-			STRNCAT(tty_name, ut->ut_line);
+			strncat_a(tty_name, ut->ut_line);
 #ifndef O_NOCTTY
 #define O_NOCTTY 0
 #endif
@@ -227,7 +227,7 @@ main(int argc, char **argv)
 
 			SYSLOG ((LOG_NOTICE,
 				 "logged off user '%s' on '%s'",
-			         STRNDUPA(ut->ut_user),
+			         strndupa_a(ut->ut_user),
 				 tty_name));
 
 			/*

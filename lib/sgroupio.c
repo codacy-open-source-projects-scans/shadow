@@ -34,7 +34,7 @@
 	struct sgrp *sg;
 	int i;
 
-	sg = CALLOC (1, struct sgrp);
+	sg = calloc_T(1, struct sgrp);
 	if (NULL == sg) {
 		return NULL;
 	}
@@ -58,7 +58,7 @@
 
 	for (i = 0; NULL != sgent->sg_adm[i]; i++);
 	/*@-mustfreeonly@*/
-	sg->sg_adm = MALLOC(i + 1, char *);
+	sg->sg_adm = malloc_T(i + 1, char *);
 	/*@=mustfreeonly@*/
 	if (NULL == sg->sg_adm) {
 		free (sg->sg_passwd);
@@ -83,7 +83,7 @@
 
 	for (i = 0; NULL != sgent->sg_mem[i]; i++);
 	/*@-mustfreeonly@*/
-	sg->sg_mem = MALLOC(i + 1, char *);
+	sg->sg_mem = malloc_T(i + 1, char *);
 	/*@=mustfreeonly@*/
 	if (NULL == sg->sg_mem) {
 		for (i = 0; NULL != sg->sg_adm[i]; i++) {
@@ -202,8 +202,6 @@ static struct commonio_ops gshadow_ops = {
 	gshadow_getname,
 	gshadow_parse,
 	gshadow_put,
-	fgetsx,
-	fputsx,
 	NULL,			/* open_hook */
 	NULL			/* close_hook */
 };

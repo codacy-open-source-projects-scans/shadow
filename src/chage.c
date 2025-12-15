@@ -21,7 +21,7 @@
 #include <time.h>
 #include <pwd.h>
 
-#include "atoi/a2i/a2s.h"
+#include "atoi/a2i.h"
 #include "defines.h"
 #include "fields.h"
 #include "prototypes.h"
@@ -86,9 +86,9 @@ static void print_day_as_date (long day);
 static void list_fields (void);
 static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (int argc, int opt_index);
-static void check_perms (struct option_flags *flags);
-static void open_files (bool readonly, struct option_flags *flags);
-static void close_files (struct option_flags *flags);
+static void check_perms(const struct option_flags *flags);
+static void open_files(bool readonly, const struct option_flags *flags);
+static void close_files(const struct option_flags *flags);
 NORETURN static void fail_exit (int code, bool process_selinux);
 
 /*
@@ -171,22 +171,22 @@ static int new_fields (void)
 	(void) puts (_("Enter the new value, or press ENTER for the default"));
 	(void) puts ("");
 
-	SNPRINTF(buf, "%ld", mindays);
-	change_field (buf, sizeof buf, _("Minimum Password Age"));
+	stprintf_a(buf, "%ld", mindays);
+	change_field(buf, sizeof(buf), _("Minimum Password Age"));
 	if (a2sl(&mindays, buf, NULL, 0, -1, LONG_MAX) == -1)
 		return 0;
 
-	SNPRINTF(buf, "%ld", maxdays);
-	change_field (buf, sizeof buf, _("Maximum Password Age"));
+	stprintf_a(buf, "%ld", maxdays);
+	change_field(buf, sizeof(buf), _("Maximum Password Age"));
 	if (a2sl(&maxdays, buf, NULL, 0, -1, LONG_MAX) == -1)
 		return 0;
 
 	if (-1 == lstchgdate || lstchgdate > LONG_MAX / DAY)
 		strcpy(buf, "-1");
 	else
-		DAY_TO_STR(buf, lstchgdate);
+		day_to_str_a(buf, lstchgdate);
 
-	change_field (buf, sizeof buf, _("Last Password Change (YYYY-MM-DD)"));
+	change_field(buf, sizeof(buf), _("Last Password Change (YYYY-MM-DD)"));
 
 	if (streq(buf, "-1")) {
 		lstchgdate = -1;
@@ -197,22 +197,22 @@ static int new_fields (void)
 		}
 	}
 
-	SNPRINTF(buf, "%ld", warndays);
-	change_field (buf, sizeof buf, _("Password Expiration Warning"));
+	stprintf_a(buf, "%ld", warndays);
+	change_field(buf, sizeof(buf), _("Password Expiration Warning"));
 	if (a2sl(&warndays, buf, NULL, 0, -1, LONG_MAX) == -1)
 		return 0;
 
-	SNPRINTF(buf, "%ld", inactdays);
-	change_field (buf, sizeof buf, _("Password Inactive"));
+	stprintf_a(buf, "%ld", inactdays);
+	change_field(buf, sizeof(buf), _("Password Inactive"));
 	if (a2sl(&inactdays, buf, NULL, 0, -1, LONG_MAX) == -1)
 		return 0;
 
 	if (-1 == expdate || LONG_MAX / DAY < expdate)
 		strcpy(buf, "-1");
 	else
-		DAY_TO_STR(buf, expdate);
+		day_to_str_a(buf, expdate);
 
-	change_field (buf, sizeof buf,
+	change_field(buf, sizeof(buf),
 	              _("Account Expiration Date (YYYY-MM-DD)"));
 
 	if (streq(buf, "-1")) {
@@ -249,7 +249,7 @@ print_day_as_date(long day)
 		return;
 	}
 
-	if (STRFTIME(buf, iflg ? "%F" : "%b %d, %Y", &tm) == 0) {
+	if (strftime_a(buf, iflg ? "%F" : "%b %d, %Y", &tm) == 0) {
 		puts(_("future"));
 		return;
 	}
@@ -479,7 +479,7 @@ static void check_flags (int argc, int opt_index)
  *
  *	It will not return if the user is not allowed.
  */
-static void check_perms (struct option_flags *flags)
+static void check_perms(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -503,7 +503,7 @@ static void check_perms (struct option_flags *flags)
  *	In read-only mode, the databases are not locked and are opened
  *	only for reading.
  */
-static void open_files (bool readonly, struct option_flags *flags)
+static void open_files(bool readonly, const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -555,7 +555,7 @@ static void open_files (bool readonly, struct option_flags *flags)
 /*
  * close_files - close and unlock the password/shadow databases
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -614,7 +614,7 @@ static void update_age (/*@null@*/const struct spwd *sp,
 	if (NULL == sp) {
 		struct passwd pwent = *pw;
 
-		memzero (&spwent, sizeof spwent);
+		memzero(&spwent, sizeof(spwent));
 		spwent.sp_namp = xstrdup (pwent.pw_name);
 		spwent.sp_pwdp = xstrdup (pwent.pw_passwd);
 		spwent.sp_flag = SHADOW_SP_FLAG_UNSET;
@@ -732,7 +732,7 @@ int main (int argc, char **argv)
 	uid_t ruid;
 	gid_t rgid;
 	const struct passwd *pw;
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false, .prefix = false};
 	bool process_selinux;
 
 	sanitize_env ();
@@ -793,7 +793,7 @@ int main (int argc, char **argv)
 		fail_exit (E_NOPERM, process_selinux);
 	}
 
-	STRTCPY(user_name, pw->pw_name);
+	strtcpy_a(user_name, pw->pw_name);
 #ifdef WITH_TCB
 	if (shadowtcb_set_user (pw->pw_name) == SHADOWTCB_FAILURE) {
 		fail_exit (E_NOPERM, process_selinux);

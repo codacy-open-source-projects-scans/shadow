@@ -108,10 +108,10 @@ static void grp_update (void);
 static void check_new_gid (void);
 static void check_new_name (void);
 static void process_flags (int, char **, struct option_flags *);
-static void lock_files (struct option_flags *flags);
+static void lock_files(const struct option_flags *flags);
 static void prepare_failure_reports (void);
 static void open_files (void);
-static void close_files (struct option_flags *flags);
+static void close_files(const struct option_flags *flags);
 static void update_primary_groups (gid_t ogid, gid_t ngid);
 
 
@@ -243,7 +243,7 @@ grp_update(void)
 			 * shadowed password, we force the creation of a
 			 * gshadow entry when a new password is requested.
 			 */
-			bzero(&sgrp, sizeof sgrp);
+			bzero(&sgrp, sizeof(sgrp));
 			sgrp.sg_namp   = xstrdup (grp.gr_name);
 			sgrp.sg_passwd = xstrdup (grp.gr_passwd);
 			sgrp.sg_adm    = &empty;
@@ -263,7 +263,7 @@ grp_update(void)
 
 		if (!aflg) {
 			// requested to replace the existing groups
-			grp.gr_mem = XMALLOC(1, char *);
+			grp.gr_mem = xmalloc_T(1, char *);
 			grp.gr_mem[0] = NULL;
 		} else {
 			// append to existing groups
@@ -273,7 +273,7 @@ grp_update(void)
 #ifdef	SHADOWGRP
 		if (NULL != osgrp) {
 			if (!aflg) {
-				sgrp.sg_mem = XMALLOC(1, char *);
+				sgrp.sg_mem = xmalloc_T(1, char *);
 				sgrp.sg_mem[0] = NULL;
 			} else {
 				if (NULL != sgrp.sg_mem[0])
@@ -487,7 +487,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
  *	close_files() closes all of the files that were opened for this new
  *	group. This causes any modified entries to be written out.
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -593,15 +593,15 @@ static void prepare_failure_reports (void)
 #endif
 	info_passwd.name  = group_name;
 
-	gr                     = XMALLOC(512, char);
+	gr                     = xmalloc_T(512, char);
 	info_group.audit_msg   = gr;
 	gr_end                 = gr + 512;
 #ifdef	SHADOWGRP
-	sgr                    = XMALLOC(512, char);
+	sgr                    = xmalloc_T(512, char);
 	info_gshadow.audit_msg = sgr;
 	sgr_end                = sgr + 512;
 #endif
-	pw                     = XMALLOC(512, char);
+	pw                     = xmalloc_T(512, char);
 	info_passwd.audit_msg  = pw;
 	pw_end                 = pw + 512;
 
@@ -669,7 +669,7 @@ static void prepare_failure_reports (void)
  *
  *	lock_files() locks the group, gshadow, and passwd databases.
  */
-static void lock_files (struct option_flags *flags)
+static void lock_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -787,7 +787,7 @@ int main (int argc, char **argv)
 	int retval;
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false, .prefix = false};
 
 	log_set_progname(Prog);
 	log_set_logfd(stderr);

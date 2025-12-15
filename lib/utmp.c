@@ -112,7 +112,7 @@ failtmp(const char *username, const struct utmpx *failent)
 	 * Append the new failure record and close the log file.
 	 */
 
-	if (write_full(fd, failent, sizeof *failent) == -1) {
+	if (write_full(fd, failent, sizeof(*failent)) == -1) {
 		goto err_write;
 	}
 
@@ -167,14 +167,14 @@ get_current_utmp(pid_t main_pid)
 				break; /* Perfect match, stop the search */
 
 			if (NULL == ut_by_pid) {
-				ut_by_pid = XMALLOC(1, struct utmpx);
+				ut_by_pid = xmalloc_T(1, struct utmpx);
 				*ut_by_pid = *ut;
 			}
 
 		} else if (   (NULL == ut_by_line)
 			   && (LOGIN_PROCESS == ut->ut_type) /* Be more picky when matching by 'ut_line' only */
 			   && (is_my_tty(ut->ut_line))) {
-			ut_by_line = XMALLOC(1, struct utmpx);
+			ut_by_line = xmalloc_T(1, struct utmpx);
 			*ut_by_line = *ut;
 		}
 	}
@@ -185,7 +185,7 @@ get_current_utmp(pid_t main_pid)
 	if (NULL != ut) {
 		struct utmpx  *ut_copy;
 
-		ut_copy = XMALLOC(1, struct utmpx);
+		ut_copy = xmalloc_T(1, struct utmpx);
 		memcpy(ut_copy, ut, sizeof(*ut));
 		ut = ut_copy;
 	}
@@ -207,8 +207,8 @@ get_session_host(char **out, pid_t main_pid)
 	ut = get_current_utmp(main_pid);
 
 #if defined(HAVE_STRUCT_UTMPX_UT_HOST)
-	if ((ut != NULL) && !STRNEQ(ut->ut_host, "")) {
-		*out = XSTRNDUP(ut->ut_host);
+	if ((ut != NULL) && !strneq_a(ut->ut_host, "")) {
+		*out = xstrndup_a(ut->ut_host);
 	} else {
 		*out = NULL;
 		ret = -2;
@@ -278,36 +278,36 @@ prepare_utmp(const char *name, const char *line, const char *host,
 	if (NULL != host && !streq(host, ""))
 		hostname = xstrdup(host);
 #if defined(HAVE_STRUCT_UTMPX_UT_HOST)
-	else if (NULL != ut && !STRNEQ(ut->ut_host, ""))
-		hostname = XSTRNDUP(ut->ut_host);
+	else if (NULL != ut && !strneq_a(ut->ut_host, ""))
+		hostname = xstrndup_a(ut->ut_host);
 #endif
 
 	line = strprefix(line, "/dev/") ?: line;
 
-	utent = XCALLOC(1, struct utmpx);
+	utent = xcalloc_T(1, struct utmpx);
 
 
 	utent->ut_type = USER_PROCESS;
 	utent->ut_pid = main_pid;
-	STRNCPY(utent->ut_line, line);
+	strncpy_a(utent->ut_line, line);
 	if (   (NULL != ut)
 	    && ('\0' != ut->ut_id[0])) {
-		STRNCPY(utent->ut_id, ut->ut_id);
+		strncpy_a(utent->ut_id, ut->ut_id);
 	} else {
-		STRNCPY(utent->ut_id, strnul(line) - MIN(strlen(line), countof(utent->ut_id)));
+		strncpy_a(utent->ut_id, strnul(line) - MIN(strlen(line), countof(utent->ut_id)));
 	}
 #if defined(HAVE_STRUCT_UTMPX_UT_NAME)
-	STRNCPY(utent->ut_name, name);
+	strncpy_a(utent->ut_name, name);
 #endif
-	STRNCPY(utent->ut_user, name);
+	strncpy_a(utent->ut_user, name);
 	if (NULL != hostname) {
 		struct addrinfo *info = NULL;
 #if defined(HAVE_STRUCT_UTMPX_UT_HOST)
-		STRNCPY(utent->ut_host, hostname);
+		strncpy_a(utent->ut_host, hostname);
 #endif
 #if defined(HAVE_STRUCT_UTMPX_UT_SYSLEN)
-		utent->ut_syslen = MIN (strlen (hostname),
-		                        sizeof (utent->ut_host));
+		utent->ut_syslen = MIN(strlen(hostname),
+		                       sizeof(utent->ut_host));
 #endif
 #if defined(HAVE_STRUCT_UTMPX_UT_ADDR) || defined(HAVE_STRUCT_UTMPX_UT_ADDR_V6)
 		if (getaddrinfo (hostname, NULL, NULL, &info) == 0) {
@@ -318,23 +318,17 @@ prepare_utmp(const char *name, const char *line, const char *host,
 				struct sockaddr_in *sa =
 					(struct sockaddr_in *) info->ai_addr;
 # if defined(HAVE_STRUCT_UTMPX_UT_ADDR)
-				memcpy (&(utent->ut_addr),
-				        &(sa->sin_addr),
-				        MIN (sizeof (utent->ut_addr),
-				             sizeof (sa->sin_addr)));
+				utent->ut_addr = sa->sin_addr.s_addr;
 # endif
 # if defined(HAVE_STRUCT_UTMPX_UT_ADDR_V6)
-				memcpy (utent->ut_addr_v6,
-				        &(sa->sin_addr),
-				        MIN (sizeof (utent->ut_addr_v6),
-				             sizeof (sa->sin_addr)));
+				utent->ut_addr_v6[0] = sa->sin_addr.s_addr;
 			} else if (info->ai_family == AF_INET6) {
 				struct sockaddr_in6 *sa =
 					(struct sockaddr_in6 *) info->ai_addr;
 				memcpy (utent->ut_addr_v6,
 				        &(sa->sin6_addr),
-				        MIN (sizeof (utent->ut_addr_v6),
-				             sizeof (sa->sin6_addr)));
+				        MIN(sizeof(utent->ut_addr_v6),
+				            sizeof(sa->sin6_addr)));
 # endif
 			}
 			freeaddrinfo (info);
@@ -433,10 +427,10 @@ active_sessions_count(const char *name, unsigned long limit)
 		if (USER_PROCESS != ut->ut_type) {
 			continue;
 		}
-		if (STRNEQ(ut->ut_user, ""))
+		if (strneq_a(ut->ut_user, ""))
 			continue;
 
-		if (!STRNEQ(ut->ut_user, name))
+		if (!strneq_a(ut->ut_user, name))
 			continue;
 
 		count++;

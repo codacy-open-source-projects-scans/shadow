@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -23,7 +24,6 @@
 #include <utime.h>
 
 #include "alloc/malloc.h"
-#include "alloc/reallocf.h"
 #include "atoi/getnum.h"
 #include "commonio.h"
 #include "defines.h"
@@ -140,7 +140,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	}
 
 	pid = getpid ();
-	SNPRINTF(buf, "%lu", (unsigned long) pid);
+	stprintf_a(buf, "%lu", (unsigned long) pid);
 	len = (ssize_t) strlen (buf) + 1;
 	if (write_full(fd, buf, len) == -1) {
 		if (log) {
@@ -181,7 +181,7 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		errno = EINVAL;
 		return 0;
 	}
-	len = read (fd, buf, sizeof (buf) - 1);
+	len = read(fd, buf, sizeof(buf) - 1);
 	close (fd);
 	if (len <= 0) {
 		if (log) {
@@ -340,7 +340,7 @@ static void free_linked_list (struct commonio_db *db)
 
 int commonio_setname (struct commonio_db *db, const char *name)
 {
-	SNPRINTF(db->filename, "%s", name);
+	stprintf_a(db->filename, "%s", name);
 	db->setname = true;
 	return 1;
 }
@@ -486,7 +486,7 @@ int commonio_unlock (struct commonio_db *db, bool process_selinux)
 		 * then call ulckpwdf() (if used) on last unlock.
 		 */
 		db->locked = false;
-		SNPRINTF(lock, "%s.lock", db->filename);
+		stprintf_a(lock, "%s.lock", db->filename);
 		unlink (lock);
 		dec_lock_count ();
 		return 1;
@@ -567,11 +567,9 @@ static void add_one_entry_nis (struct commonio_db *db,
 }
 #endif				/* KEEP_NIS_AT_END */
 
-/* Initial buffer size, as well as increment if not sufficient
-   (for reading very long lines in group files).  */
-#define BUFLEN 4096
 
-int commonio_open (struct commonio_db *db, int mode)
+int
+commonio_open(struct commonio_db *db, int mode)
 {
 	char *buf;
 	char *line;
@@ -633,28 +631,12 @@ int commonio_open (struct commonio_db *db, int mode)
 		return 0;
 	}
 
-	buflen = BUFLEN;
-	buf = MALLOC(buflen, char);
-	if (NULL == buf)
-		goto cleanup_errno;
-
-	while (db->ops->cio_fgets(buf, buflen, db->fp) == buf) {
+	buf = NULL;
+	while (getline(&buf, &buflen, db->fp) != -1) {
 		struct commonio_entry  *p;
 
-		while (   (strrchr (buf, '\n') == NULL)
-		       && (feof (db->fp) == 0)) {
-			size_t len;
-
-			buflen += BUFLEN;
-			buf = REALLOCF(buf, buflen, char);
-			if (NULL == buf)
-				goto cleanup_errno;
-
-			len = strlen (buf);
-			if (db->ops->cio_fgets(buf + len, buflen - len, db->fp) == NULL)
-				goto cleanup_buf;
-		}
-		stpsep(buf, "\n");
+		if (stpsep(buf, "\n") == NULL)
+			goto cleanup_buf;
 
 		line = strdup (buf);
 		if (NULL == line) {
@@ -673,7 +655,7 @@ int commonio_open (struct commonio_db *db, int mode)
 			}
 		}
 
-		p = MALLOC(1, struct commonio_entry);
+		p = malloc_T(1, struct commonio_entry);
 		if (NULL == p) {
 			goto cleanup_entry;
 		}
@@ -715,6 +697,7 @@ int commonio_open (struct commonio_db *db, int mode)
 	return 0;
 }
 
+
 /*
  * Sort given db according to cmp function (usually compares uids)
  */
@@ -748,7 +731,7 @@ commonio_sort (struct commonio_db *db, int (*cmp) (const void *, const void *))
 		return 0;
 	}
 
-	entries = MALLOC(n, struct commonio_entry *);
+	entries = malloc_T(n, struct commonio_entry *);
 	if (entries == NULL) {
 		return -1;
 	}
@@ -767,7 +750,7 @@ commonio_sort (struct commonio_db *db, int (*cmp) (const void *, const void *))
 		entries[n] = ptr;
 		n++;
 	}
-	qsort (entries, n, sizeof (struct commonio_entry *), cmp);
+	qsort(entries, n, sizeof(struct commonio_entry *), cmp);
 
 	/* Take care of the head and tail separately */
 	db->head = entries[0];
@@ -869,7 +852,7 @@ static int write_all (const struct commonio_db *db)
 				return -1;
 			}
 		} else if (NULL != p->line) {
-			if (db->ops->cio_fputs(p->line, db->fp) == EOF)
+			if (fputs(p->line, db->fp) == EOF)
 				return -1;
 
 			if (putc ('\n', db->fp) == EOF) {
@@ -881,7 +864,8 @@ static int write_all (const struct commonio_db *db)
 }
 
 
-int commonio_close (struct commonio_db *db, bool process_selinux)
+int
+commonio_close(struct commonio_db *db, MAYBE_UNUSED bool process_selinux)
 {
 	bool         errors = false;
 	char         buf[1024];
@@ -905,7 +889,7 @@ int commonio_close (struct commonio_db *db, bool process_selinux)
 		goto fail;
 	}
 
-	memzero (&sb, sizeof sb);
+	memzero(&sb, sizeof(sb));
 	if (NULL != db->fp) {
 		if (fstat (fileno (db->fp), &sb) != 0) {
 			(void) fclose (db->fp);
@@ -916,7 +900,7 @@ int commonio_close (struct commonio_db *db, bool process_selinux)
 		/*
 		 * Create backup file.
 		 */
-		if (SNPRINTF(buf, "%s-", db->filename) == -1) {
+		if (stprintf_a(buf, "%s-", db->filename) == -1) {
 			(void) fclose (db->fp);
 			db->fp = NULL;
 			goto fail;
@@ -955,7 +939,7 @@ int commonio_close (struct commonio_db *db, bool process_selinux)
 		sb.st_gid = db->st_gid;
 	}
 
-	if (SNPRINTF(buf, "%s+", db->filename) == -1)
+	if (stprintf_a(buf, "%s+", db->filename) == -1)
 		goto fail;
 
 #ifdef WITH_SELINUX
@@ -1074,7 +1058,7 @@ int commonio_update (struct commonio_db *db, const void *eptr)
 		return 1;
 	}
 	/* not found, new entry */
-	p = MALLOC(1, struct commonio_entry);
+	p = malloc_T(1, struct commonio_entry);
 	if (NULL == p) {
 		db->ops->cio_free(nentry);
 		errno = ENOMEM;
@@ -1111,7 +1095,7 @@ int commonio_append (struct commonio_db *db, const void *eptr)
 		return 0;
 	}
 	/* new entry */
-	p = MALLOC(1, struct commonio_entry);
+	p = malloc_T(1, struct commonio_entry);
 	if (NULL == p) {
 		db->ops->cio_free(nentry);
 		errno = ENOMEM;

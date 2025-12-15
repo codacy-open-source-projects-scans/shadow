@@ -20,6 +20,7 @@
 #include <pwd.h>
 
 #include "alloc/malloc.h"
+#include "attr.h"
 #include "defines.h"
 #include "groupio.h"
 #include "prototypes.h"
@@ -141,7 +142,7 @@ static void add_user (const char *user,
 			static struct sgrp sgrent;
 			sgrent.sg_namp = xstrdup (newgrp->gr_name);
 			sgrent.sg_mem = dup_list (newgrp->gr_mem);
-			sgrent.sg_adm = XMALLOC(1, char *);
+			sgrent.sg_adm = xmalloc_T(1, char *);
 			sgrent.sg_adm[0] = NULL;
 
 			/* Move any password to gshadow */
@@ -217,7 +218,7 @@ static void remove_user (const char *user,
 			static struct sgrp sgrent;
 			sgrent.sg_namp = xstrdup (newgrp->gr_name);
 			sgrent.sg_mem = dup_list (newgrp->gr_mem);
-			sgrent.sg_adm = XMALLOC(1, char *);
+			sgrent.sg_adm = xmalloc_T(1, char *);
 			sgrent.sg_adm[0] = NULL;
 
 			/* Move any password to gshadow */
@@ -282,9 +283,9 @@ static void purge_members (const struct group *grp, bool process_selinux)
 			/* Create a shadow group based on this group */
 			static struct sgrp sgrent;
 			sgrent.sg_namp = xstrdup (newgrp->gr_name);
-			sgrent.sg_mem = XMALLOC(1, char *);
+			sgrent.sg_mem = xmalloc_T(1, char *);
 			sgrent.sg_mem[0] = NULL;
-			sgrent.sg_adm = XMALLOC(1, char *);
+			sgrent.sg_adm = xmalloc_T(1, char *);
 			sgrent.sg_adm[0] = NULL;
 
 			/* Move any password to gshadow */
@@ -427,7 +428,8 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 
 }
 
-static void check_perms (bool process_selinux)
+static void
+check_perms(MAYBE_UNUSED bool process_selinux)
 {
 	if (!list) {
 #ifdef USE_PAM
@@ -533,7 +535,7 @@ static void open_files (bool process_selinux)
 #endif
 }
 
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -576,7 +578,7 @@ int main (int argc, char **argv)
 {
 	char *name;
 	const struct group *grp;
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false};
 	bool process_selinux;
 
 	log_set_progname(Prog);

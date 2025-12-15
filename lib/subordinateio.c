@@ -20,9 +20,8 @@
 #include <string.h>
 
 #include "alloc/malloc.h"
-#include "alloc/realloc.h"
 #include "alloc/reallocf.h"
-#include "atoi/str2i.h"
+#include "atoi/a2i.h"
 #include "string/ctype/strisascii/strisdigit.h"
 #include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
@@ -44,7 +43,7 @@ static /*@null@*/ /*@only@*/void *subordinate_dup (const void *ent)
 	const struct subordinate_range *rangeent = ent;
 	struct subordinate_range *range;
 
-	range = MALLOC(1, struct subordinate_range);
+	range = malloc_T(1, struct subordinate_range);
 	if (NULL == range) {
 		return NULL;
 	}
@@ -93,11 +92,11 @@ subordinate_parse(const char *line)
 	 * Copy the string to a temporary buffer so the substrings can
 	 * be modified to be NULL terminated.
 	 */
-	if (strlen (line) >= sizeof rangebuf)
+	if (strlen(line) >= sizeof(rangebuf))
 		return NULL;	/* fail if too long */
 	strcpy (rangebuf, line);
 
-	if (STRSEP2ARR(rangebuf, ":", fields) == -1)
+	if (strsep2arr_a(rangebuf, ":", fields) == -1)
 		return NULL;
 
 	if (streq(fields[0], ""))
@@ -139,8 +138,6 @@ static struct commonio_ops subordinate_ops = {
 	NULL,			/* getname */
 	subordinate_parse,	/* parse */
 	subordinate_put,	/* put */
-	fgets,			/* fgets */
-	fputs,			/* fputs */
 	NULL,			/* open_hook */
 	NULL,			/* close_hook */
 };
@@ -226,7 +223,7 @@ static const struct subordinate_range *find_range(struct commonio_db *db,
                 return NULL;
         }
         owner_uid = pwd->pw_uid;
-        if (SNPRINTF(owner_uid_string, "%lu", (unsigned long) owner_uid) == -1)
+        if (stprintf_a(owner_uid_string, "%lu", (unsigned long) owner_uid) == -1)
                 return NULL;
 
         commonio_rewind(db);
@@ -276,19 +273,17 @@ static const struct subordinate_range *find_range(struct commonio_db *db,
 static bool have_range(struct commonio_db *db,
 		       const char *owner, unsigned long start, unsigned long count);
 
-static bool append_range(struct subid_range **ranges, const struct subordinate_range *new, int n)
+static struct subid_range *
+append_range(struct subid_range *ranges, const struct subordinate_range *new, int n)
 {
-	struct subid_range  *sr;
+	ranges = reallocf_T(ranges, n + 1, struct subid_range);
+	if (ranges == NULL)
+		return NULL;
 
-	sr = REALLOC(*ranges, n + 1, struct subid_range);
-	if (!sr)
-		return false;
+	ranges[n].start = new->start;
+	ranges[n].count = new->count;
 
-	sr[n].start = new->start;
-	sr[n].count = new->count;
-	*ranges = sr;
-
-	return true;
+	return ranges;
 }
 
 void free_subordinate_ranges(struct subordinate_range **ranges, int count)
@@ -920,9 +915,8 @@ int list_owner_ranges(const char *owner, enum subid_type id_type, struct subid_r
 		if (   streq(range->owner, owner)
 		    || (have_owner_id && streq(range->owner, id)))
 		{
-			if (!append_range(&ranges, range, count++)) {
-				free(ranges);
-				ranges = NULL;
+			ranges = append_range(ranges, range, count++);
+			if (ranges == NULL) {
 				count = -1;
 				goto out;
 			}
@@ -968,7 +962,7 @@ static int append_uids(uid_t **uids, const char *owner, int n)
 			return n;
 	}
 
-	*uids = REALLOCF(*uids, n + 1, uid_t);
+	*uids = reallocf_T(*uids, n + 1, uid_t);
 	if (!*uids)
 		return -1;
 

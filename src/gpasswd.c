@@ -96,27 +96,27 @@ static bool is_valid_user_list (const char *users);
 static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (int argc, int opt_index);
 static void open_files (void);
-static void close_files (struct option_flags *flags);
+static void close_files(const struct option_flags *flags);
 #ifdef SHADOWGRP
-static void get_group (struct group *gr, struct sgrp *sg, struct option_flags *flags);
+static void get_group(struct group *gr, struct sgrp *sg, const struct option_flags *flags);
 static void check_perms(const struct sgrp *sg);
 static void update_group (struct group *gr, struct sgrp *sg);
 static void change_passwd (struct group *gr, struct sgrp *sg);
 #else
-static void get_group (struct group *gr, struct option_flags *flags);
+static void get_group(struct group *gr, const struct option_flags *flags);
 static void check_perms(void);
 static void update_group (struct group *gr);
 static void change_passwd (struct group *gr);
 #endif
 static void log_gpasswd_failure (const char *suffix);
-static void log_gpasswd_failure_system (/*@null@*/MAYBE_UNUSED void *arg);
-static void log_gpasswd_failure_group (/*@null@*/MAYBE_UNUSED void *arg);
+static void log_gpasswd_failure_system (/*@null@*/void *);
+static void log_gpasswd_failure_group (/*@null@*/void *);
 #ifdef SHADOWGRP
-static void log_gpasswd_failure_gshadow (/*@null@*/MAYBE_UNUSED void *arg);
+static void log_gpasswd_failure_gshadow (/*@null@*/void *);
 #endif
 static void log_gpasswd_success (const char *suffix);
-static void log_gpasswd_success_system (/*@null@*/MAYBE_UNUSED void *arg);
-static void log_gpasswd_success_group (/*@null@*/MAYBE_UNUSED void *arg);
+static void log_gpasswd_success_system (/*@null@*/void *);
+static void log_gpasswd_success_group(/*@null@*/void *);
 
 /*
  * usage - display usage message
@@ -467,25 +467,28 @@ static void log_gpasswd_failure (const char *suffix)
 	}
 }
 
-static void log_gpasswd_failure_system (MAYBE_UNUSED void *arg)
+static void
+log_gpasswd_failure_system(void *)
 {
 	log_gpasswd_failure ("");
 }
 
-static void log_gpasswd_failure_group (MAYBE_UNUSED void *arg)
+static void
+log_gpasswd_failure_group(void *)
 {
 	char  buf[1024];
 
-	SNPRINTF(buf, " in %s", gr_dbname());
+	stprintf_a(buf, " in %s", gr_dbname());
 	log_gpasswd_failure (buf);
 }
 
 #ifdef SHADOWGRP
-static void log_gpasswd_failure_gshadow (MAYBE_UNUSED void *arg)
+static void
+log_gpasswd_failure_gshadow(void *)
 {
 	char  buf[1024];
 
-	SNPRINTF(buf, " in %s", sgr_dbname());
+	stprintf_a(buf, " in %s", sgr_dbname());
 	log_gpasswd_failure (buf);
 }
 #endif				/* SHADOWGRP */
@@ -521,7 +524,7 @@ static void log_gpasswd_success (const char *suffix)
 		         "password of group %s removed by %s%s",
 		         group, myname, suffix));
 #ifdef WITH_AUDIT
-		SNPRINTF(buf, "password of group %s removed by %s%s",
+		stprintf_a(buf, "password of group %s removed by %s%s",
 		         group, myname, suffix);
 		audit_logger_with_group (AUDIT_GRP_CHAUTHTOK,
 		              "delete-group-password",
@@ -533,7 +536,7 @@ static void log_gpasswd_success (const char *suffix)
 		         "access to group %s restricted by %s%s",
 		         group, myname, suffix));
 #ifdef WITH_AUDIT
-		SNPRINTF(buf, "access to group %s restricted by %s%s",
+		stprintf_a(buf, "access to group %s restricted by %s%s",
 		         group, myname, suffix);
 		audit_logger_with_group (AUDIT_GRP_MGMT,
 		              "restrict-group",
@@ -578,16 +581,18 @@ static void log_gpasswd_success (const char *suffix)
 	}
 }
 
-static void log_gpasswd_success_system (MAYBE_UNUSED void *arg)
+static void
+log_gpasswd_success_system(void *)
 {
 	log_gpasswd_success ("");
 }
 
-static void log_gpasswd_success_group (MAYBE_UNUSED void *arg)
+static void
+log_gpasswd_success_group(void *)
 {
 	char  buf[1024];
 
-	SNPRINTF(buf, " in %s", gr_dbname());
+	stprintf_a(buf, " in %s", gr_dbname());
 	log_gpasswd_success (buf);
 }
 
@@ -598,7 +603,7 @@ static void log_gpasswd_success_group (MAYBE_UNUSED void *arg)
  *
  *	It will call exit in case of error.
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -706,9 +711,9 @@ static void update_group (struct group *gr)
  *	Note: If !is_shadowgrp, *sg will not be initialized.
  */
 #ifdef SHADOWGRP
-static void get_group (struct group *gr, struct sgrp *sg, struct option_flags *flags)
+static void get_group(struct group *gr, struct sgrp *sg, const struct option_flags *flags)
 #else
-static void get_group (struct group *gr, struct option_flags *flags)
+static void get_group(struct group *gr, const struct option_flags *flags)
 #endif
 {
 	struct group const*tmpgr = NULL;
@@ -772,7 +777,7 @@ static void get_group (struct group *gr, struct option_flags *flags)
 
 			sg->sg_mem = dup_list (gr->gr_mem);
 
-			sg->sg_adm = XMALLOC(1, char *);
+			sg->sg_adm = xmalloc_T(1, char *);
 			sg->sg_adm[0] = NULL;
 
 		}
@@ -822,11 +827,11 @@ static void change_passwd (struct group *gr)
 			exit (1);
 		}
 
-		STRTCPY(pass, cp);
+		strtcpy_a(pass, cp);
 		erase_pass (cp);
 		cp = agetpass (_("Re-enter new password: "));
 		if (NULL == cp) {
-			MEMZERO(pass);
+			memzero_a(pass);
 			exit (1);
 		}
 
@@ -836,7 +841,7 @@ static void change_passwd (struct group *gr)
 		}
 
 		erase_pass (cp);
-		MEMZERO(pass);
+		memzero_a(pass);
 
 		if (retries + 1 < RETRIES) {
 			puts (_("They don't match; try again"));
@@ -850,7 +855,7 @@ static void change_passwd (struct group *gr)
 
 	salt = crypt_make_salt (NULL, NULL);
 	cp = pw_encrypt (pass, salt);
-	MEMZERO(pass);
+	memzero_a(pass);
 	if (NULL == cp) {
 		fprintf (stderr,
 		         _("%s: failed to crypt password with salt '%s': %s\n"),
@@ -878,7 +883,7 @@ int main (int argc, char **argv)
 	struct sgrp sgent;
 #endif
 	struct passwd *pw = NULL;
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false};
 
 #ifdef WITH_AUDIT
 	audit_help_open ();

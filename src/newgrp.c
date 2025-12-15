@@ -199,7 +199,7 @@ static void check_perms (const struct group *grp,
 		if (streq(grp->gr_passwd, "") ||
 		    !streq(grp->gr_passwd, cpasswd)) {
 #ifdef WITH_AUDIT
-			SNPRINTF(audit_buf, "authentication new_gid=%lu",
+			stprintf_a(audit_buf, "authentication new_gid=%lu",
 			         (unsigned long) grp->gr_gid);
 			audit_logger (AUDIT_GRP_AUTH,
 			              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
@@ -212,7 +212,7 @@ static void check_perms (const struct group *grp,
 			goto failure;
 		}
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "authentication new_gid=%lu",
+		stprintf_a(audit_buf, "authentication new_gid=%lu",
 		         (unsigned long) grp->gr_gid);
 		audit_logger (AUDIT_GRP_AUTH,
 		              audit_buf, NULL, getuid (), SHADOW_AUDIT_SUCCESS);
@@ -619,7 +619,7 @@ int main (int argc, char **argv)
 	 * database. However getgroups() will return the group. So
 	 * if she is listed there already it is ok to grant membership.
 	 */
-	is_member = (LFIND(&grp->gr_gid, gids, ngroups) != NULL);
+	is_member = (LFIND(gid_t, &grp->gr_gid, gids, ngroups) != NULL);
 
 	/*
 	 * For split groups (due to limitations of NIS), check all
@@ -671,9 +671,9 @@ int main (int argc, char **argv)
 	 * If the group doesn't fit, I'll complain loudly and skip this
 	 * part.
 	 */
-	gids = XREALLOC(gids, ngroups + 1, gid_t);
+	gids = xrealloc_T(gids, ngroups + 1, gid_t);
 
-	LSEARCH(&gid, gids, &ngroups);
+	LSEARCH(gid_t, &gid, gids, &ngroups);
 
 	if (setgroups(ngroups, gids) == -1)
 		perror("setgroups");
@@ -699,7 +699,7 @@ int main (int argc, char **argv)
 	if (setgid (gid) != 0) {
 		perror ("setgid");
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+		stprintf_a(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
 		audit_logger (AUDIT_CHGRP_ID,
 		              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
@@ -709,7 +709,7 @@ int main (int argc, char **argv)
 	if (setuid (getuid ()) != 0) {
 		perror ("setuid");
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+		stprintf_a(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
 		audit_logger (AUDIT_CHGRP_ID,
 		              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
@@ -724,7 +724,7 @@ int main (int argc, char **argv)
 		closelog ();
 		execl (SHELL, "sh", "-c", command, (char *) NULL);
 #ifdef WITH_AUDIT
-		SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+		stprintf_a(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
 		audit_logger (AUDIT_CHGRP_ID,
 		              audit_buf, NULL, getuid (), SHADOW_AUDIT_FAILURE);
 #endif
@@ -792,7 +792,7 @@ int main (int argc, char **argv)
 	}
 
 #ifdef WITH_AUDIT
-	SNPRINTF(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
+	stprintf_a(audit_buf, "changing new_gid=%lu", (unsigned long) gid);
 	audit_logger (AUDIT_CHGRP_ID,
 	              audit_buf, NULL, getuid (), SHADOW_AUDIT_SUCCESS);
 #endif

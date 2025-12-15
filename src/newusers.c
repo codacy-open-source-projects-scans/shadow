@@ -33,8 +33,9 @@
 #include <string.h>
 
 #include "alloc/reallocf.h"
+#include "atoi/a2i.h"
 #include "atoi/getnum.h"
-#include "atoi/str2i.h"
+#include "attr.h"
 #ifdef ACCT_TOOLS_SETUID
 #ifdef USE_PAM
 #include "pam_defs.h"
@@ -117,9 +118,9 @@ static int update_passwd (struct passwd *, const char *);
 static int add_passwd (struct passwd *, const char *);
 static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (void);
-static void check_perms (struct option_flags *flags);
+static void check_perms(const struct option_flags *flags);
 static void open_files (bool process_selinux);
-static void close_files (struct option_flags *flags);
+static void close_files(const struct option_flags *flags);
 
 extern int allow_bad_names;
 
@@ -481,7 +482,8 @@ static int update_passwd (struct passwd *pwd, const char *password)
 /*
  * add_passwd - add or update the encrypted password
  */
-static int add_passwd (struct passwd *pwd, const char *password)
+static int
+add_passwd(struct passwd *pwd, MAYBE_UNUSED const char *password)
 {
 	const struct spwd *sp;
 	struct spwd spent;
@@ -736,7 +738,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
 		if (freopen (argv[optind], "r", stdin) == NULL) {
 			char  buf[BUFSIZ];
 
-			SNPRINTF(buf, "%s: %s", Prog, argv[1]);
+			stprintf_a(buf, "%s: %s", Prog, argv[1]);
 			perror (buf);
 			fail_exit (EXIT_FAILURE, !flags->chroot);
 		}
@@ -797,7 +799,8 @@ static void check_flags (void)
  *
  *	It will not return if the user is not allowed.
  */
-static void check_perms (struct option_flags *flags)
+static void
+check_perms(MAYBE_UNUSED const struct option_flags *flags)
 {
 #ifdef ACCT_TOOLS_SETUID
 #ifdef USE_PAM
@@ -947,7 +950,7 @@ static void open_files (bool process_selinux)
 /*
  * close_files - close and unlock the password, group and shadow databases
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -1068,7 +1071,7 @@ int main (int argc, char **argv)
 	char **passwords = NULL;
 	size_t nusers = 0;
 #endif				/* USE_PAM */
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false};
 	bool process_selinux;
 
 	log_set_progname(Prog);
@@ -1109,7 +1112,7 @@ int main (int argc, char **argv)
 	 * over 100 is allocated. The pw_gid field will be updated with that
 	 * value.
 	 */
-	while (fgets (buf, sizeof buf, stdin) != NULL) {
+	while (fgets(buf, sizeof(buf), stdin) != NULL) {
 		line++;
 		if (stpsep(buf, "\n") == NULL && feof(stdin) == 0) {
 			fprintf (stderr, _("%s: line %jd: line too long\n"),
@@ -1117,7 +1120,7 @@ int main (int argc, char **argv)
 			fail_exit (EXIT_FAILURE, process_selinux);
 		}
 
-		if (STRSEP2ARR(buf, ":", fields) == -1) {
+		if (strsep2arr_a(buf, ":", fields) == -1) {
 			fprintf (stderr, _("%s: line %jd: invalid line\n"),
 			         Prog, line);
 			fail_exit (EXIT_FAILURE, process_selinux);
@@ -1193,9 +1196,9 @@ int main (int argc, char **argv)
 #ifdef USE_PAM
 		/* keep the list of user/password for later update by PAM */
 		nusers++;
-		lines     = REALLOCF(lines, nusers, intmax_t);
-		usernames = REALLOCF(usernames, nusers, char *);
-		passwords = REALLOCF(passwords, nusers, char *);
+		lines     = reallocf_T(lines, nusers, intmax_t);
+		usernames = reallocf_T(usernames, nusers, char *);
+		passwords = reallocf_T(passwords, nusers, char *);
 		if (lines == NULL || usernames == NULL || passwords == NULL) {
 			fprintf(stderr, _("%s: line %jd: %s\n"), Prog, line, strerrno());
 			fail_exit (EXIT_FAILURE, process_selinux);
@@ -1204,7 +1207,7 @@ int main (int argc, char **argv)
 		usernames[nusers-1] = xstrdup(fields[0]);
 		passwords[nusers-1] = xstrdup(fields[1]);
 #endif				/* USE_PAM */
-		if (add_passwd (&newpw, fields[1]) != 0) {
+		if (!streq(fields[1], "") && add_passwd(&newpw, fields[1]) != 0) {
 			fprintf (stderr,
 			         _("%s: line %jd: can't update password\n"),
 			         Prog, line);
@@ -1321,6 +1324,8 @@ int main (int argc, char **argv)
 #ifdef USE_PAM
 	/* Now update the passwords using PAM */
 	for (size_t i = 0; i < nusers; i++) {
+		if (streq(passwords[i], ""))
+			continue;
 		if (do_pam_passwd_non_interactive ("newusers", usernames[i], passwords[i]) != 0) {
 			fprintf (stderr,
 			         _("%s: (line %jd, user %s) password not changed\n"),

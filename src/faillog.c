@@ -19,7 +19,7 @@
 #include <time.h>
 #include <assert.h>
 
-#include "atoi/str2i.h"
+#include "atoi/a2i.h"
 #include "defines.h"
 #include "faillog.h"
 #include "prototypes.h"
@@ -173,7 +173,7 @@ static void print_one (/*@null@*/const struct passwd *pw, bool force)
 		fprintf (stderr, "Cannot read time from faillog.\n");
 		return;
 	}
-	STRFTIME(ptime, "%D %H:%M:%S %z", tm);
+	strftime_a(ptime, "%D %H:%M:%S %z", tm);
 	cp = ptime;
 
 	printf ("%-9s   %5d    %5d   ",
@@ -245,7 +245,7 @@ static bool reset_one (uid_t uid)
 	fl.fail_cnt = 0;
 
 	if (   (fseeko (fail, offset, SEEK_SET) == 0)
-	    && (fwrite (&fl, sizeof (fl), 1, fail) == 1)) {
+	    && (fwrite(&fl, sizeof(fl), 1, fail) == 1)) {
 		(void) fflush (fail);
 		return false;
 	}
@@ -266,7 +266,7 @@ static void reset (void)
 		/* There is no need to reset outside of the faillog
 		 * database.
 		 */
-		uid_t uidmax = statbuf.st_size / sizeof (struct faillog);
+		uid_t uidmax = statbuf.st_size / sizeof(struct faillog);
 		if (uidmax > 1) {
 			uidmax--;
 		}
@@ -341,7 +341,7 @@ static bool setmax_one (uid_t uid, short max)
 	fl.fail_max = max;
 
 	if (   (fseeko (fail, offset, SEEK_SET) == 0)
-	    && (fwrite (&fl, sizeof (fl), 1, fail) == 1)) {
+	    && (fwrite(&fl, sizeof(fl), 1, fail) == 1)) {
 		(void) fflush (fail);
 		return false;
 	}
@@ -372,7 +372,7 @@ static void setmax (short max)
 			/* The default umax value is based on the size of the
 			 * faillog database.
 			 */
-			uid_t uidmax = statbuf.st_size / sizeof (struct faillog);
+			uid_t uidmax = statbuf.st_size / sizeof(struct faillog);
 			if (uidmax > 1) {
 				uidmax--;
 			}
@@ -439,7 +439,7 @@ static bool set_locktime_one (uid_t uid, long locktime)
 	fl.fail_locktime = locktime;
 
 	if (   (fseeko (fail, offset, SEEK_SET) == 0)
-	    && (fwrite (&fl, sizeof (fl), 1, fail) == 1)) {
+	    && (fwrite(&fl, sizeof(fl), 1, fail) == 1)) {
 		(void) fflush (fail);
 		return false;
 	}
@@ -470,7 +470,7 @@ static void set_locktime (long locktime)
 			/* The default umax value is based on the size of the
 			 * faillog database.
 			 */
-			uid_t uidmax = statbuf.st_size / sizeof (struct faillog);
+			uid_t uidmax = statbuf.st_size / sizeof(struct faillog);
 			if (uidmax > 1) {
 				uidmax--;
 			}

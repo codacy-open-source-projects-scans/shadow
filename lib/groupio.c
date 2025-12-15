@@ -102,8 +102,6 @@ static struct commonio_ops group_ops = {
 	group_getname,
 	group_parse,
 	group_put,
-	fgetsx,
-	fputsx,
 	group_open_hook,
 	group_close_hook
 };
@@ -346,7 +344,7 @@ static /*@null@*/struct commonio_entry *merge_group_entries (
 			members++;
 		}
 	}
-	new_members = CALLOC (members + 1, char *);
+	new_members = calloc_T(members + 1, char *);
 	if (NULL == new_members) {
 		free(new_line);
 		return NULL;
@@ -407,7 +405,7 @@ static int split_groups (unsigned int max_members)
 			continue;
 		}
 
-		new = MALLOC(1, struct commonio_entry);
+		new = malloc_T(1, struct commonio_entry);
 		if (NULL == new) {
 			return 0;
 		}

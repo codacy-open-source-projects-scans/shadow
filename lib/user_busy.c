@@ -12,6 +12,7 @@
 #ident "$Id: $"
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <sys/types.h>
 #include <dirent.h>
@@ -71,7 +72,7 @@ user_busy_utmp(const char *name)
 		if (utent->ut_type != USER_PROCESS) {
 			continue;
 		}
-		if (!STRNEQ(utent->ut_user, name))
+		if (!strneq_a(utent->ut_user, name))
 			continue;
 
 		if (kill (utent->ut_pid, 0) != 0) {
@@ -98,12 +99,12 @@ static int different_namespace (const char *sname)
 	char     path[41];
 	char     buf[512], buf2[512];
 
-	SNPRINTF(path, "/proc/%s/ns/user", sname);
+	stprintf_a(path, "/proc/%s/ns/user", sname);
 
-	if (READLINKNUL(path, buf) == -1)
+	if (readlinknul_a(path, buf) == -1)
 		return 0;
 
-	if (READLINKNUL("/proc/self/ns/user", buf2) == -1)
+	if (readlinknul_a("/proc/self/ns/user", buf2) == -1)
 		return 0;
 
 	if (streq(buf, buf2))
@@ -121,13 +122,13 @@ static int check_status (const char *name, const char *sname, uid_t uid)
 	char  line[1024];
 	FILE  *sfile;
 
-	SNPRINTF(status, "/proc/%s/status", sname);
+	stprintf_a(status, "/proc/%s/status", sname);
 
 	sfile = fopen (status, "r");
 	if (NULL == sfile) {
 		return 0;
 	}
-	while (fgets (line, sizeof (line), sfile) == line) {
+	while (fgets(line, sizeof(line), sfile) != NULL) {
 		if (strprefix(line, "Uid:\t")) {
 			unsigned long ruid, euid, suid;
 
@@ -214,7 +215,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 		}
 
 		/* Check if the process is in our chroot */
-		SNPRINTF(root_path, "/proc/%lu/root", (unsigned long) pid);
+		stprintf_a(root_path, "/proc/%lu/root", (unsigned long) pid);
 		if (stat (root_path, &sbroot_process) != 0) {
 			continue;
 		}
@@ -234,7 +235,7 @@ static int user_busy_processes (const char *name, uid_t uid)
 			return 1;
 		}
 
-		SNPRINTF(task_path, "/proc/%lu/task", (unsigned long) pid);
+		stprintf_a(task_path, "/proc/%lu/task", (unsigned long) pid);
 		task_dir = opendir (task_path);
 		if (task_dir != NULL) {
 			while (NULL != (ent = readdir(task_dir))) {

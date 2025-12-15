@@ -95,8 +95,8 @@ static void new_sgent (struct sgrp *sgent);
 #endif
 static void grp_update (void);
 static void check_new_name (void);
-static void close_files (struct option_flags *flags);
-static void open_files (struct option_flags *flags);
+static void close_files(const struct option_flags *flags);
+static void open_files(const struct option_flags *flags);
 static void process_flags (int argc, char **argv, struct option_flags *flags);
 static void check_flags (void);
 static void check_perms (void);
@@ -148,7 +148,7 @@ static void fail_exit(int status)
  */
 static void new_grent (struct group *grent)
 {
-	memzero (grent, sizeof *grent);
+	memzero(grent, sizeof(*grent));
 	grent->gr_name = group_name;
 	if (pflg) {
 		grent->gr_passwd = group_passwd;
@@ -168,7 +168,7 @@ static void new_grent (struct group *grent)
  */
 static void new_sgent (struct sgrp *sgent)
 {
-	memzero (sgent, sizeof *sgent);
+	memzero(sgent, sizeof(*sgent));
 	sgent->sg_namp = group_name;
 	if (pflg) {
 		sgent->sg_passwd = group_passwd;
@@ -282,7 +282,7 @@ check_new_name(void)
  *	close_files() closes all of the files that were opened for this new
  *	group. This causes any modified entries to be written out.
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -341,7 +341,7 @@ static void close_files (struct option_flags *flags)
  *
  *	open_files() opens the two group files.
  */
-static void open_files (struct option_flags *flags)
+static void open_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -604,7 +604,7 @@ static void check_perms (void)
  */
 int main (int argc, char **argv)
 {
-	struct option_flags flags;
+	struct option_flags  flags = {.chroot = false, .prefix = false};
 
 	log_set_progname(Prog);
 	log_set_logfd(stderr);

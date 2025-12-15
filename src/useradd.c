@@ -18,17 +18,18 @@
 #include <getopt.h>
 #include <grp.h>
 #ifdef ENABLE_LASTLOG
-#include <lastlog.h>
+# include <lastlog.h>
 #endif /* ENABLE_LASTLOG */
 #include <libgen.h>
 #include <pwd.h>
 #include <signal.h>
 #ifdef ACCT_TOOLS_SETUID
-#ifdef USE_PAM
-#include "pam_defs.h"
-#endif				/* USE_PAM */
+# ifdef USE_PAM
+#  include "pam_defs.h"
+# endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
 #include <paths.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -38,7 +39,7 @@
 #include <unistd.h>
 
 #include "alloc/malloc.h"
-#include "atoi/a2i/a2s.h"
+#include "atoi/a2i.h"
 #include "atoi/getnum.h"
 #include "chkname.h"
 #include "defines.h"
@@ -225,10 +226,10 @@ static bool home_added = false;
 
 /* local function prototypes */
 NORETURN static void fail_exit (int, bool);
-static void get_defaults (struct option_flags *);
+static void get_defaults(const struct option_flags *);
 static void show_defaults (void);
 static int set_defaults (void);
-static int get_groups (char *, struct option_flags *);
+static int get_groups(char *, const struct option_flags *);
 static struct group * get_local_group (char * grp_name, bool process_selinux);
 NORETURN static void usage (int status);
 static void new_pwent (struct passwd *);
@@ -237,7 +238,7 @@ static void new_spent (struct spwd *);
 static void grp_update (bool);
 
 static void process_flags (int argc, char **argv, struct option_flags *flags);
-static void close_files (struct option_flags *flags);
+static void close_files(const struct option_flags *flags);
 static void close_group_files (bool process_selinux);
 static void unlock_group_files (bool process_selinux);
 static void open_files (bool process_selinux);
@@ -249,9 +250,9 @@ static void lastlog_reset (uid_t);
 #endif /* ENABLE_LASTLOG */
 static void tallylog_reset (const char *);
 static void usr_update (unsigned long subuid_count, unsigned long subgid_count,
-                        struct option_flags *flags);
-static void create_home (struct option_flags *flags);
-static void create_mail (struct option_flags *flags);
+                        const struct option_flags *flags);
+static void create_home(const struct option_flags *flags);
+static void create_mail(const struct option_flags *flags);
 static void check_uid_range(int rflg, uid_t user_id);
 
 
@@ -328,7 +329,7 @@ static void fail_exit (int code, bool process_selinux)
  *	file does not exist.
  */
 static void
-get_defaults(struct option_flags *flags)
+get_defaults(const struct option_flags *flags)
 {
 	FILE        *fp;
 	char        *default_file = USER_DEFAULTS_FILE;
@@ -355,7 +356,7 @@ get_defaults(struct option_flags *flags)
 	 * Read the file a line at a time. Only the lines that have relevant
 	 * values are used, everything else can be ignored.
 	 */
-	while (fgets (buf, sizeof buf, fp) == buf) {
+	while (fgets(buf, sizeof(buf), fp) != NULL) {
 		stpsep(buf, "\n");
 
 		cp = stpsep(buf, "=");
@@ -587,7 +588,7 @@ set_defaults(void)
 		goto skip;
 	}
 
-	while (fgets (buf, sizeof buf, ifp) == buf) {
+	while (fgets(buf, sizeof(buf), ifp) != NULL) {
 		char  *val;
 
 		if (stpsep(buf, "\n") == NULL) {
@@ -690,7 +691,7 @@ set_defaults(void)
 	/*
 	 * Rename the current default file to its backup name.
 	 */
-	assert(SNPRINTF(buf, "%s-", default_file) != -1);
+	assert(stprintf_a(buf, "%s-", default_file) != -1);
 	unlink (buf);
 	if ((link (default_file, buf) != 0) && (ENOENT != errno)) {
 		fprintf (stderr,
@@ -739,7 +740,7 @@ err_free_new:
  *	converts it to a NULL-terminated array. Any unknown group
  *	names are reported as errors.
  */
-static int get_groups (char *list, struct option_flags *flags)
+static int get_groups(char *list, const struct option_flags *flags)
 {
 	struct group *grp;
 	bool errors = false;
@@ -930,7 +931,7 @@ static void usage (int status)
  */
 static void new_pwent (struct passwd *pwent)
 {
-	memzero (pwent, sizeof *pwent);
+	memzero(pwent, sizeof(*pwent));
 	pwent->pw_name = (char *) user_name;
 	if (is_shadow_pwd) {
 		pwent->pw_passwd = (char *) SHADOW_PASSWD_STRING;
@@ -953,7 +954,7 @@ static void new_pwent (struct passwd *pwent)
  */
 static void new_spent (struct spwd *spent)
 {
-	memzero (spent, sizeof *spent);
+	memzero(spent, sizeof(*spent));
 	spent->sp_namp = (char *) user_name;
 	spent->sp_pwdp = (char *) user_pass;
 	spent->sp_lstchg = gettime () / DAY;
@@ -1572,7 +1573,7 @@ static void process_flags (int argc, char **argv, struct option_flags *flags)
  *	close_files() closes all of the files that were opened for this
  *	new user. This causes any modified entries to be written out.
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -1855,7 +1856,7 @@ static char *empty_list = NULL;
 
 static void new_grent (struct group *grent)
 {
-	memzero (grent, sizeof *grent);
+	memzero(grent, sizeof(*grent));
 	grent->gr_name = (char *) user_name;
 #ifdef  SHADOWGRP
 	if (is_shadow_grp) {
@@ -1879,7 +1880,7 @@ static void new_grent (struct group *grent)
 
 static void new_sgent (struct sgrp *sgent)
 {
-	memzero (sgent, sizeof *sgent);
+	memzero(sgent, sizeof(*sgent));
 	sgent->sg_namp = (char *) user_name;
 	sgent->sg_passwd = "!";	/* XXX warning: const */
 	sgent->sg_adm = &empty_list;
@@ -1956,14 +1957,14 @@ static void faillog_reset (uid_t uid)
 {
 	struct faillog fl;
 	int fd;
-	off_t offset_uid = (off_t) (sizeof fl) * uid;
+	off_t offset_uid = (off_t) sizeof(fl) * uid;
 	struct stat st;
 
 	if (stat (FAILLOG_FILE, &st) != 0 || st.st_size <= offset_uid) {
 		return;
 	}
 
-	memzero (&fl, sizeof (fl));
+	memzero(&fl, sizeof(fl));
 
 	fd = open (FAILLOG_FILE, O_RDWR);
 	if (-1 == fd) {
@@ -1974,7 +1975,7 @@ static void faillog_reset (uid_t uid)
 		return;
 	}
 	if (   (lseek (fd, offset_uid, SEEK_SET) != offset_uid)
-	    || (write_full(fd, &fl, sizeof (fl)) == -1)
+	    || (write_full(fd, &fl, sizeof(fl)) == -1)
 	    || (fsync (fd) != 0)) {
 		fprintf (stderr,
 		         _("%s: failed to reset the faillog entry of UID %lu: %s\n"),
@@ -1994,7 +1995,7 @@ static void lastlog_reset (uid_t uid)
 {
 	struct lastlog ll;
 	int fd;
-	off_t offset_uid = (off_t) (sizeof ll) * uid;
+	off_t offset_uid = (off_t) sizeof(ll) * uid;
 	uid_t max_uid;
 	struct stat st;
 
@@ -2008,7 +2009,7 @@ static void lastlog_reset (uid_t uid)
 		return;
 	}
 
-	memzero (&ll, sizeof (ll));
+	memzero(&ll, sizeof(ll));
 
 	fd = open(_PATH_LASTLOG, O_RDWR);
 	if (-1 == fd) {
@@ -2019,7 +2020,7 @@ static void lastlog_reset (uid_t uid)
 		return;
 	}
 	if (   (lseek (fd, offset_uid, SEEK_SET) != offset_uid)
-	    || (write_full (fd, &ll, sizeof (ll)) == -1)
+	    || (write_full(fd, &ll, sizeof(ll)) == -1)
 	    || (fsync (fd) != 0)) {
 		fprintf (stderr,
 		         _("%s: failed to reset the lastlog entry of UID %lu: %s\n"),
@@ -2090,7 +2091,7 @@ static void tallylog_reset (const char *user_name)
  */
 static void
 usr_update (unsigned long subuid_count, unsigned long subgid_count,
-            struct option_flags *flags)
+            const struct option_flags *flags)
 {
 	struct passwd pwent;
 	struct spwd spent;
@@ -2193,7 +2194,7 @@ usr_update (unsigned long subuid_count, unsigned long subgid_count,
  *	already exist. It will be created mode 755 owned by the user
  *	with the user's default group.
  */
-static void create_home (struct option_flags *flags)
+static void create_home(const struct option_flags *flags)
 {
 	char    path[strlen(prefix_user_home) + 2];
 	char    *bhome, *cp;
@@ -2321,7 +2322,7 @@ static void create_home (struct option_flags *flags)
  *	exist. It will be created mode 660 owned by the user and group
  *	'mail'
  */
-static void create_mail (struct option_flags *flags)
+static void create_mail(const struct option_flags *flags)
 {
 	int           fd;
 	char          *file;
@@ -2442,7 +2443,7 @@ int main (int argc, char **argv)
 #endif
 	unsigned long subuid_count = 0;
 	unsigned long subgid_count = 0;
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false, .prefix = false};
 	bool process_selinux;
 
 	log_set_progname(Prog);
@@ -2462,7 +2463,7 @@ int main (int argc, char **argv)
 #endif
 
 	sys_ngroups = sysconf (_SC_NGROUPS_MAX);
-	user_groups = XMALLOC(1 + sys_ngroups, char *);
+	user_groups = xmalloc_T(1 + sys_ngroups, char *);
 	/*
 	 * Initialize the list to be empty
 	 */

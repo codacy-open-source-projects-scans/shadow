@@ -135,7 +135,7 @@ int main (int argc, char **argv)
 	const struct group *gr;
 	struct group grent;
 	const struct sgrp *sg;
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false};
 	bool process_selinux;
 
 	log_set_progname(Prog);
@@ -238,7 +238,8 @@ int main (int argc, char **argv)
 	return 0;
 }
 #else				/* !SHADOWGRP */
-int main (MAYBE_UNUSED int argc, char **argv)
+int
+main(int, char **argv)
 {
 	fprintf (stderr,
 		 "%s: not configured for shadow group support.\n", argv[0]);

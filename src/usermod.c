@@ -28,14 +28,14 @@
 #endif				/* ACCT_TOOLS_SETUID */
 #include <paths.h>
 #include <stdio.h>
+#include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 
 #include "alloc/malloc.h"
-#include "atoi/a2i/a2i.h"
-#include "atoi/a2i/a2s.h"
+#include "atoi/a2i.h"
 #include "atoi/getnum.h"
 #include "chkname.h"
 #include "defines.h"
@@ -69,6 +69,7 @@
 #include "string/strcmp/strprefix.h"
 #include "string/strdup/strdup.h"
 #include "string/strerrno.h"
+#include "string/strspn/stprspn.h"
 #include "time/day_to_str.h"
 #include "typetraits.h"
 
@@ -206,9 +207,9 @@ static void update_gshadow(const struct sgrp *sgrp, bool process_selinux);
 static void grp_update (bool process_selinux);
 
 static void process_flags (int, char **, struct option_flags *);
-static void close_files (struct option_flags *);
+static void close_files(const struct option_flags *);
 static void open_files (bool process_selinux);
-static void usr_update (struct option_flags *flags);
+static void usr_update(const struct option_flags *flags);
 static void move_home (bool process_selinux);
 #ifdef ENABLE_LASTLOG
 static void update_lastlog (void);
@@ -365,7 +366,7 @@ prepend_range(const char *str, struct id_range_list_entry **head)
 	if (range.first > range.last)
 		return 0;
 
-	entry = MALLOC(1, struct id_range_list_entry);
+	entry = malloc_T(1, struct id_range_list_entry);
 	if (!entry) {
 		fprintf (stderr,
 			_("%s: failed to allocate memory: %s\n"),
@@ -548,10 +549,8 @@ static void new_pwent (struct passwd *pwent, bool process_selinux)
 		         "change user '%s' home from '%s' to '%s'",
 		         pwent->pw_name, pwent->pw_dir, user_newhome));
 
-		if (strlen(user_newhome) > 1
-			&& '/' == user_newhome[strlen(user_newhome)-1]) {
-			user_newhome[strlen(user_newhome)-1]='\0';
-		}
+		if (!streq(user_newhome, ""))
+			stpcpy(stprspn(user_newhome + 1, "/"), "");
 
 		pwent->pw_dir = user_newhome;
 	}
@@ -601,8 +600,8 @@ static void new_spent (struct spwd *spent, bool process_selinux)
 		/* log dates rather than numbers of days. */
 		char new_exp[16], old_exp[16];
 
-		DAY_TO_STR(new_exp, user_newexpire);
-		DAY_TO_STR(old_exp, user_expire);
+		day_to_str_a(new_exp, user_newexpire);
+		day_to_str_a(old_exp, user_expire);
 #ifdef WITH_AUDIT
 		audit_logger (AUDIT_USER_MGMT,
 		              "changing-expiration-date",
@@ -1437,7 +1436,7 @@ process_flags(int argc, char **argv, struct option_flags *flags)
  *	close_files() closes all of the files that were opened for this new
  *	user. This causes any modified entries to be written out.
  */
-static void close_files (struct option_flags *flags)
+static void close_files(const struct option_flags *flags)
 {
 	bool process_selinux;
 
@@ -1681,7 +1680,7 @@ static void open_files (bool process_selinux)
  *	usr_update() creates the password file entries for this user and
  *	will update the group entries if required.
  */
-static void usr_update (struct option_flags *flags)
+static void usr_update(const struct option_flags *flags)
 {
 	struct passwd pwent;
 	const struct passwd *pwd;
@@ -1721,7 +1720,7 @@ static void usr_update (struct option_flags *flags)
 			 *    a shadowed password
 			 *  + aging information is requested
 			 */
-			bzero(&spent, sizeof spent);
+			bzero(&spent, sizeof(spent));
 			spent.sp_namp   = user_name;
 
 			/* The user explicitly asked for a shadow feature.
@@ -1898,8 +1897,8 @@ static void update_lastlog (void)
 {
 	struct lastlog ll;
 	int fd;
-	off_t off_uid = (off_t) user_id * sizeof ll;
-	off_t off_newuid = (off_t) user_newid * sizeof ll;
+	off_t off_uid = (off_t) user_id * sizeof(ll);
+	off_t off_newuid = (off_t) user_newid * sizeof(ll);
 	uid_t max_uid;
 
 	if (access(_PATH_LASTLOG, F_OK) != 0) {
@@ -1922,10 +1921,10 @@ static void update_lastlog (void)
 	}
 
 	if (   (lseek (fd, off_uid, SEEK_SET) == off_uid)
-	    && (read (fd, &ll, sizeof ll) == (ssize_t) sizeof ll)) {
+	    && (read(fd, &ll, sizeof(ll)) == (ssize_t) sizeof(ll))) {
 		/* Copy the old entry to its new location */
 		if (   (lseek (fd, off_newuid, SEEK_SET) != off_newuid)
-		    || (write_full(fd, &ll, sizeof ll) == -1)
+		    || (write_full(fd, &ll, sizeof(ll)) == -1)
 		    || (fsync (fd) != 0)) {
 			fprintf (stderr,
 			         _("%s: failed to copy the lastlog entry of user %lu to user %lu: %s\n"),
@@ -1937,11 +1936,11 @@ static void update_lastlog (void)
 
 		/* Check if the new UID already has an entry */
 		if (   (lseek (fd, off_newuid, SEEK_SET) == off_newuid)
-		    && (read (fd, &ll, sizeof ll) == (ssize_t) sizeof ll)) {
+		    && (read(fd, &ll, sizeof(ll)) == (ssize_t) sizeof(ll))) {
 			/* Reset the new uid's lastlog entry */
-			memzero (&ll, sizeof (ll));
+			memzero(&ll, sizeof(ll));
 			if (   (lseek (fd, off_newuid, SEEK_SET) != off_newuid)
-			    || (write_full(fd, &ll, sizeof ll) == -1)
+			    || (write_full(fd, &ll, sizeof(ll)) == -1)
 			    || (fsync (fd) != 0)) {
 				fprintf (stderr,
 				         _("%s: failed to copy the lastlog entry of user %lu to user %lu: %s\n"),
@@ -1969,8 +1968,8 @@ static void update_faillog (void)
 {
 	struct faillog fl;
 	int fd;
-	off_t off_uid = (off_t) user_id * sizeof fl;
-	off_t off_newuid = (off_t) user_newid * sizeof fl;
+	off_t off_uid = (off_t) user_id * sizeof(fl);
+	off_t off_newuid = (off_t) user_newid * sizeof(fl);
 
 	if (access (FAILLOG_FILE, F_OK) != 0) {
 		return;
@@ -1986,10 +1985,10 @@ static void update_faillog (void)
 	}
 
 	if (   (lseek (fd, off_uid, SEEK_SET) == off_uid)
-	    && (read (fd, &fl, sizeof fl) == (ssize_t) sizeof fl)) {
+	    && (read(fd, &fl, sizeof(fl)) == (ssize_t) sizeof(fl))) {
 		/* Copy the old entry to its new location */
 		if (   (lseek (fd, off_newuid, SEEK_SET) != off_newuid)
-		    || (write_full(fd, &fl, sizeof fl) == -1)
+		    || (write_full(fd, &fl, sizeof(fl)) == -1)
 		    || (fsync (fd) != 0)) {
 			fprintf (stderr,
 			         _("%s: failed to copy the faillog entry of user %lu to user %lu: %s\n"),
@@ -2001,11 +2000,11 @@ static void update_faillog (void)
 
 		/* Check if the new UID already has an entry */
 		if (   (lseek (fd, off_newuid, SEEK_SET) == off_newuid)
-		    && (read (fd, &fl, sizeof fl) == (ssize_t) sizeof fl)) {
+		    && (read(fd, &fl, sizeof(fl)) == (ssize_t) sizeof(fl))) {
 			/* Reset the new uid's faillog entry */
-			memzero (&fl, sizeof (fl));
+			memzero(&fl, sizeof(fl));
 			if (   (lseek (fd, off_newuid, SEEK_SET) != off_newuid)
-			    || (write_full(fd, &fl, sizeof fl) == -1))
+			    || (write_full(fd, &fl, sizeof(fl)) == -1))
 			{
 				fprintf (stderr,
 				         _("%s: failed to copy the faillog entry of user %lu to user %lu: %s\n"),
@@ -2135,7 +2134,7 @@ int main (int argc, char **argv)
 	int retval;
 #endif				/* USE_PAM */
 #endif				/* ACCT_TOOLS_SETUID */
-	struct option_flags  flags;
+	struct option_flags  flags = {.chroot = false, .prefix = false};
 	bool process_selinux;
 
 	log_set_progname(Prog);
@@ -2154,7 +2153,7 @@ int main (int argc, char **argv)
 #endif
 
 	sys_ngroups = sysconf (_SC_NGROUPS_MAX);
-	user_groups = XMALLOC(sys_ngroups + 1, char *);
+	user_groups = xmalloc_T(sys_ngroups + 1, char *);
 	user_groups[0] = NULL;
 
 	is_shadow_pwd = spw_file_present ();

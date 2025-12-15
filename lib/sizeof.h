@@ -15,7 +15,9 @@
 #include <sys/types.h>
 
 
-#define ssizeof(x)           ((ssize_t) sizeof(x))
+#define typeas(T)            typeof((T){})
+
+#define ssizeof(x)           ({(ssize_t){sizeof(x)};})
 #define memberof(T, member)  ((T){}.member)
 #define WIDTHOF(x)           (sizeof(x) * CHAR_BIT)
 
@@ -23,7 +25,8 @@
 # define countof(a)          (sizeof(a) / sizeof((a)[0]))
 #endif
 
-#define SIZEOF_ARRAY(a)      (countof(a) * sizeof((a)[0]))
+// sizeof_a - sizeof array
+#define sizeof_a(a)          (countof(a) * sizeof((a)[0]))
 #define STRLEN(s)            (countof("" s "") - 1)
 
 
