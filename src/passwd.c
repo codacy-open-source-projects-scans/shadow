@@ -128,16 +128,16 @@ static bool do_update_pwd = false;
  */
 
 /* local function prototypes */
-NORETURN static void usage (int);
+NORETURN static void usage(int);
 
-static int new_password (const struct passwd *);
+static int new_password(const struct passwd *);
 
-static void check_password (const struct passwd *, const struct spwd *);
-static /*@observer@*/const char *pw_status (const char *);
-static void print_status (const struct passwd *);
-NORETURN static void fail_exit (int, bool);
-NORETURN static void oom (bool process_selinux);
-static char *update_crypt_pw (char *, bool);
+static void check_password(const struct passwd *, const struct spwd *, bool);
+static /*@observer@*/const char *pw_status(const char *);
+static void print_status(const struct passwd *);
+NORETURN static void fail_exit(int, bool);
+NORETURN static void oom(bool);
+static char *update_crypt_pw(char *, bool);
 static void update_noshadow(bool);
 static void update_shadow(bool);
 
@@ -382,7 +382,7 @@ static int new_password (const struct passwd *pw)
  *	check_password() sees if the invoker has permission to change the
  *	password for the given user.
  */
-static void check_password (const struct passwd *pw, const struct spwd *sp)
+static void check_password (const struct passwd *pw, const struct spwd *sp, bool process_selinux)
 {
 	int exp_status;
 
@@ -393,7 +393,7 @@ static void check_password (const struct passwd *pw, const struct spwd *sp)
 	 * PAM) was specified, do nothing. --marekm
 	 */
 	if (kflg && (0 == exp_status)) {
-		exit (E_SUCCESS);
+		fail_exit(E_SUCCESS, process_selinux);
 	}
 
 	/*
@@ -418,7 +418,7 @@ static void check_password (const struct passwd *pw, const struct spwd *sp)
 		                sp->sp_namp);
 		SYSLOG ((LOG_WARN, "password locked for '%s'", sp->sp_namp));
 		closelog ();
-		exit (E_NOPERM);
+		fail_exit(E_NOPERM, process_selinux);
 	}
 
 	/*
@@ -436,10 +436,10 @@ static void check_password (const struct passwd *pw, const struct spwd *sp)
 		if (now < ok) {
 			(void) fprintf (stderr,
 			                _("The password for %s cannot be changed yet.\n"),
-			                pw->pw_name);
-			SYSLOG ((LOG_WARN, "now < minimum age for '%s'", pw->pw_name));
+			                sp->sp_namp);
+			SYSLOG ((LOG_WARN, "now < minimum age for '%s'", sp->sp_namp));
 			closelog ();
-			exit (E_NOPERM);
+			fail_exit(E_NOPERM, process_selinux);
 		}
 	}
 }
@@ -488,18 +488,18 @@ NORETURN
 static void
 fail_exit (int status, bool process_selinux)
 {
-	if (pw_locked) {
-		if (pw_unlock (process_selinux) == 0) {
-			(void) fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
-			SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
-			/* continue */
-		}
-	}
-
 	if (spw_locked) {
 		if (spw_unlock (process_selinux) == 0) {
 			(void) fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, spw_dbname ());
 			SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
+			/* continue */
+		}
+	}
+
+	if (pw_locked) {
+		if (pw_unlock (process_selinux) == 0) {
+			(void) fprintf (stderr, _("%s: failed to unlock %s\n"), Prog, pw_dbname ());
+			SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
 			/* continue */
 		}
 	}
@@ -513,6 +513,88 @@ oom (bool process_selinux)
 {
 	(void) fprintf (stderr, _("%s: out of memory\n"), Prog);
 	fail_exit (E_FAILURE, process_selinux);
+}
+
+/*
+ * open_files - lock and open the password files
+ *
+ *      open_files() opens password files if available.
+ */
+static void open_files(bool process_selinux)
+{
+	if (pw_lock () == 0) {
+		(void) fprintf (stderr,
+		                _("%s: cannot lock %s; try again later.\n"),
+		                Prog, pw_dbname ());
+		exit (E_PWDBUSY);
+	}
+	pw_locked = true;
+	if (pw_open (O_CREAT | O_RDWR) == 0) {
+		(void) fprintf (stderr,
+		                _("%s: cannot open %s\n"),
+		                Prog, pw_dbname ());
+		SYSLOG ((LOG_WARN, "cannot open %s", pw_dbname ()));
+		fail_exit (E_MISSING, process_selinux);
+	}
+
+	if (!spw_file_present ())
+		return;
+	if (spw_lock () == 0) {
+		(void) fprintf (stderr,
+		                _("%s: cannot lock %s; try again later.\n"),
+		                Prog, spw_dbname ());
+		fail_exit (E_PWDBUSY, process_selinux);
+	}
+	spw_locked = true;
+	if (spw_open (O_CREAT | O_RDWR) == 0) {
+		(void) fprintf (stderr,
+		                _("%s: cannot open %s\n"),
+		                Prog, spw_dbname ());
+		SYSLOG ((LOG_WARN, "cannot open %s", spw_dbname ()));
+		fail_exit (E_FAILURE, process_selinux);
+	}
+}
+
+/*
+ * close_files - close all of the files that were opened
+ *
+ *	close_files() closes all of the files that were opened for this
+ *	user.  This causes a possibly modified entry to be written out.
+ */
+static void close_files(bool process_selinux)
+{
+	if (spw_locked) {
+		if (spw_close (process_selinux) == 0) {
+			(void) fprintf (stderr,
+			                _("%s: failure while writing changes to %s\n"),
+			                Prog, spw_dbname ());
+			SYSLOG ((LOG_ERR, "failure while writing changes to %s", spw_dbname ()));
+			fail_exit (E_FAILURE, process_selinux);
+		}
+		if (spw_unlock (process_selinux) == 0) {
+			(void) fprintf (stderr,
+			                _("%s: failed to unlock %s\n"),
+			                Prog, spw_dbname ());
+			SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
+			/* continue */
+		}
+		spw_locked = false;
+	}
+	if (pw_close (process_selinux) == 0) {
+		(void) fprintf (stderr,
+		                _("%s: failure while writing changes to %s\n"),
+		                Prog, pw_dbname ());
+		SYSLOG ((LOG_ERR, "failure while writing changes to %s", pw_dbname ()));
+		fail_exit (E_FAILURE, process_selinux);
+	}
+	if (pw_unlock (process_selinux) == 0) {
+		(void) fprintf (stderr,
+		                _("%s: failed to unlock %s\n"),
+		                Prog, pw_dbname ());
+		SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
+		/* continue */
+	}
+	pw_locked = false;
 }
 
 static char *update_crypt_pw (char *cp, bool process_selinux)
@@ -560,20 +642,6 @@ static void update_noshadow(bool process_selinux)
 	const struct passwd *pw;
 	struct passwd *npw;
 
-	if (pw_lock () == 0) {
-		(void) fprintf (stderr,
-		                _("%s: cannot lock %s; try again later.\n"),
-		                Prog, pw_dbname ());
-		exit (E_PWDBUSY);
-	}
-	pw_locked = true;
-	if (pw_open (O_CREAT | O_RDWR) == 0) {
-		(void) fprintf (stderr,
-		                _("%s: cannot open %s\n"),
-		                Prog, pw_dbname ());
-		SYSLOG ((LOG_WARN, "cannot open %s", pw_dbname ()));
-		fail_exit (E_MISSING, process_selinux);
-	}
 	pw = pw_locate (name);
 	if (NULL == pw) {
 		(void) fprintf (stderr,
@@ -581,6 +649,7 @@ static void update_noshadow(bool process_selinux)
 		                Prog, name, pw_dbname ());
 		fail_exit (E_NOPERM, process_selinux);
 	}
+	check_password(pw, pwd_to_spwd(pw), process_selinux);
 	npw = __pw_dup (pw);
 	if (NULL == npw) {
 		oom (process_selinux);
@@ -592,57 +661,21 @@ static void update_noshadow(bool process_selinux)
 		                Prog, pw_dbname (), npw->pw_name);
 		fail_exit (E_FAILURE, process_selinux);
 	}
-	if (pw_close (process_selinux) == 0) {
-		(void) fprintf (stderr,
-		                _("%s: failure while writing changes to %s\n"),
-		                Prog, pw_dbname ());
-		SYSLOG ((LOG_ERR, "failure while writing changes to %s", pw_dbname ()));
-		fail_exit (E_FAILURE, process_selinux);
-	}
-	if (pw_unlock (process_selinux) == 0) {
-		(void) fprintf (stderr,
-		                _("%s: failed to unlock %s\n"),
-		                Prog, pw_dbname ());
-		SYSLOG ((LOG_ERR, "failed to unlock %s", pw_dbname ()));
-		/* continue */
-	}
-	pw_locked = false;
 }
 
 static void update_shadow(bool process_selinux)
 {
+	const struct passwd pw = { .pw_passwd = SHADOW_PASSWD_STRING };
 	const struct spwd *sp;
 	struct spwd *nsp;
 
-	if (spw_lock () == 0) {
-		(void) fprintf (stderr,
-		                _("%s: cannot lock %s; try again later.\n"),
-		                Prog, spw_dbname ());
-		exit (E_PWDBUSY);
-	}
-	spw_locked = true;
-	if (spw_open (O_CREAT | O_RDWR) == 0) {
-		(void) fprintf (stderr,
-		                _("%s: cannot open %s\n"),
-		                Prog, spw_dbname ());
-		SYSLOG ((LOG_WARN, "cannot open %s", spw_dbname ()));
-		fail_exit (E_FAILURE, process_selinux);
-	}
-	sp = spw_locate (name);
+	sp = spw_locked ? spw_locate(name) : NULL;
 	if (NULL == sp) {
 		/* Try to update the password in /etc/passwd instead. */
-		(void) spw_close (process_selinux);
 		update_noshadow (process_selinux);
-		if (spw_unlock (process_selinux) == 0) {
-			(void) fprintf (stderr,
-			                _("%s: failed to unlock %s\n"),
-			                Prog, spw_dbname ());
-			SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
-			/* continue */
-		}
-		spw_locked = false;
 		return;
 	}
+	check_password(&pw, sp, process_selinux);
 	nsp = __spw_dup (sp);
 	if (NULL == nsp) {
 		oom (process_selinux);
@@ -687,21 +720,6 @@ static void update_shadow(bool process_selinux)
 		                Prog, spw_dbname (), nsp->sp_namp);
 		fail_exit (E_FAILURE, process_selinux);
 	}
-	if (spw_close (process_selinux) == 0) {
-		(void) fprintf (stderr,
-		                _("%s: failure while writing changes to %s\n"),
-		                Prog, spw_dbname ());
-		SYSLOG ((LOG_ERR, "failure while writing changes to %s", spw_dbname ()));
-		fail_exit (E_FAILURE, process_selinux);
-	}
-	if (spw_unlock (process_selinux) == 0) {
-		(void) fprintf (stderr,
-		                _("%s: failed to unlock %s\n"),
-		                Prog, spw_dbname ());
-		SYSLOG ((LOG_ERR, "failed to unlock %s", spw_dbname ()));
-		/* continue */
-	}
-	spw_locked = false;
 }
 
 /*
@@ -1064,7 +1082,7 @@ main(int argc, char **argv)
 			 * See if the user is permitted to change the password.
 			 * Otherwise, go ahead and set a new password.
 			 */
-			check_password (pw, sp);
+			check_password(pw, sp, process_selinux);
 
 			/*
 			 * Let the user know whose password is being changed.
@@ -1117,11 +1135,9 @@ main(int argc, char **argv)
 		closelog ();
 		exit (E_NOPERM);
 	}
-	if (spw_file_present ()) {
-		update_shadow (process_selinux);
-	} else {
-		update_noshadow (process_selinux);
-	}
+	open_files(process_selinux);
+	update_shadow(process_selinux);
+	close_files(process_selinux);
 
 	nscd_flush_cache ("passwd");
 	nscd_flush_cache ("group");
