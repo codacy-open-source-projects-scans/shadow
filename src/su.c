@@ -60,7 +60,6 @@
 #include "prototypes.h"
 #include "shadowlog.h"
 #include "string/sprintf/aprintf.h"
-#include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
 #include "string/strcmp/strprefix.h"
 #include "string/strcpy/strtcpy.h"
@@ -94,12 +93,9 @@ static char caller_name[BUFSIZ];
 static bool change_environment = true;
 
 #ifdef USE_PAM
-static char kill_msg[256];
-static char wait_msg[256];
 static pam_handle_t *pamh = NULL;
-static int caught = 0;
-/* PID of the child, in case it needs to be killed */
-static pid_t pid_child = 0;
+static volatile sig_atomic_t caught = 0;
+static volatile sig_atomic_t timeout = 0;
 #endif
 
 /*
@@ -115,8 +111,9 @@ static void execve_shell (const char *shellname,
                           char *args[],
                           char *const envp[]);
 #ifdef USE_PAM
-static void kill_child(int);
+static void kill_child(pid_t);
 static void prepare_pam_close_session (void);
+static void set_timeout(int);
 #else				/* !USE_PAM */
 static void die (int);
 static bool iswheel (const char *);
@@ -169,16 +166,19 @@ static bool iswheel (const char *username)
 	return is_on_list (grp->gr_mem, username);
 }
 #else				/* USE_PAM */
+NORETURN
 static void
-kill_child(int)
+kill_child(pid_t pid_child)
 {
-	if (0 != pid_child) {
-		(void) kill (-pid_child, SIGKILL);
-		(void) write_full(STDERR_FILENO, kill_msg, strlen(kill_msg));
-	} else {
-		(void) write_full(STDERR_FILENO, wait_msg, strlen(wait_msg));
-	}
-	_exit (255);
+	kill(-pid_child, SIGKILL);
+	fputs(_(" ...killed.\n"), stderr);
+	exit (255);
+}
+
+static void
+set_timeout(int)
+{
+	timeout = 1;
 }
 #endif				/* USE_PAM */
 
@@ -286,6 +286,7 @@ static void prepare_pam_close_session (void)
 	int status;
 	int ret;
 	struct sigaction action;
+	pid_t pid_child;
 
 	/* reset SIGCHLD handling to default */
 	action.sa_handler = SIG_DFL;
@@ -368,7 +369,7 @@ static void prepare_pam_close_session (void)
 			    && (EINTR == errno)
 			    && (SIGTSTP == caught)) {
 				caught = 0;
-				/* Except for SIGTSTP, which request to
+				/* Except for SIGTSTP, which requests to
 				 * stop the child.
 				 * We will SIGSTOP ourself on the next
 				 * waitpid round.
@@ -395,21 +396,18 @@ static void prepare_pam_close_session (void)
 		              stderr);
 		(void) kill (-pid_child, caught);
 
-		stprintf_a(kill_msg, _(" ...killed.\n"));
-		stprintf_a(wait_msg, _(" ...waiting for child to terminate.\n"));
-
 		/* Any signals other than SIGCHLD and SIGALRM will no longer have any effect,
 		 * so it's time to block all of them. */
 		sigfillset (&ourset);
 		if (sigprocmask (SIG_BLOCK, &ourset, NULL) != 0) {
 			fprintf (stderr, _("%s: signal masking malfunction\n"), Prog);
-			kill_child (0);
-			/* Never reach (_exit called). */
+			kill_child(pid_child);
+			/* Never reached (exit called). */
 		}
 
 		/* Send SIGKILL to the child if it doesn't
 		 * exit within 2 seconds (after SIGTERM) */
-		(void) signal (SIGALRM, kill_child);
+		(void) signal (SIGALRM, set_timeout);
 		(void) signal (SIGCHLD, catch_signals);
 		(void) alarm (2);
 
@@ -418,6 +416,10 @@ static void prepare_pam_close_session (void)
 
 		while (0 == waitpid (pid_child, &status, WNOHANG)) {
 			sigsuspend (&ourset);
+			if (timeout) {
+				kill_child(pid_child);
+				/* Never reached (exit called). */
+			}
 		}
 		pid_child = 0;
 

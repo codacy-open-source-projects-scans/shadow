@@ -43,6 +43,7 @@
 #endif				/* WITH_TCB */
 #include "shadowlog.h"
 #include "sssd.h"
+#include "fs/mkstemp/fmkomstemp.h"
 #include "string/sprintf/aprintf.h"
 #include "string/sprintf/snprintf.h"
 #include "string/strcmp/streq.h"
@@ -72,7 +73,7 @@ static bool tcb_mode = false;
 
 /* local function prototypes */
 static void usage (int status);
-static int create_backup_file (FILE *, const char *, struct stat *);
+static int create_backup_file (FILE *, char *, struct stat *);
 static void vipwexit (const char *msg, int syserr, int ret);
 static void vipwedit (const char *, int (*)(void), int (*)(bool));
 
@@ -103,16 +104,13 @@ static void usage (int status)
 /*
  *
  */
-static int create_backup_file (FILE * fp, const char *backup, struct stat *sb)
+static int create_backup_file (FILE * fp, char *backup, struct stat *sb)
 {
 	struct utimbuf ub;
 	FILE *bkfp;
 	int c;
-	mode_t mask;
 
-	mask = umask (077);
-	bkfp = fopen (backup, "w");
-	(void) umask (mask);
+	bkfp = fmkomstemp(backup, 0, 0600);
 	if (NULL == bkfp) {
 		return -1;
 	}
@@ -134,16 +132,18 @@ static int create_backup_file (FILE * fp, const char *backup, struct stat *sb)
 		unlink (backup);
 		return -1;
 	}
-	if (fclose (bkfp) != 0) {
-		unlink (backup);
-		return -1;
-	}
 
 	ub.actime = sb->st_atime;
 	ub.modtime = sb->st_mtime;
 	if (   (utime (backup, &ub) != 0)
-	    || (chmod (backup, sb->st_mode) != 0)
-	    || (chown (backup, sb->st_uid, sb->st_gid) != 0)) {
+	    || (fchown(fileno(bkfp), sb->st_uid, sb->st_gid) != 0)
+	    || (fchmod(fileno(bkfp), sb->st_mode) != 0)) {
+		fclose(bkfp);
+		unlink (backup);
+		return -1;
+	}
+
+	if (fclose (bkfp) != 0) {
 		unlink (backup);
 		return -1;
 	}
@@ -217,11 +217,11 @@ vipwedit (const char *file, int (*file_lock) (void), int (*file_unlock) (bool))
 			vipwexit (_("failed to drop privileges"), errno, 1);
 		}
 		stprintf_a(fileedit,
-		         TCB_DIR "/" SHADOWTCB_SCRATCHDIR "/.vipw.shadow.%s",
-		         user);
+		         TCB_DIR "/" SHADOWTCB_SCRATCHDIR "/.%s.shadow.%s.XXXXXX",
+		         Prog, user);
 	} else {
 #endif				/* WITH_TCB */
-		stprintf_a(fileedit, "%s.edit", file);
+		stprintf_a(fileedit, "/etc/.%s.XXXXXX", Prog);
 #ifdef WITH_TCB
 	}
 #endif				/* WITH_TCB */
@@ -291,6 +291,9 @@ vipwedit (const char *file, int (*file_lock) (void), int (*file_unlock) (bool))
 
 	orig_pgrp = tcgetpgrp(STDIN_FILENO);
 
+	/* set SIGCHLD to default for waitpid */
+	signal(SIGCHLD, SIG_DFL);
+
 	pid = fork ();
 	if (-1 == pid) {
 		vipwexit ("fork", 1, 1);
@@ -337,9 +340,6 @@ vipwedit (const char *file, int (*file_lock) (void), int (*file_unlock) (bool))
 		sigaddset(&mask, SIGTTOU);
 		sigprocmask(SIG_BLOCK, &mask, &omask);
 	}
-
-	/* set SIGCHLD to default for waitpid */
-	signal(SIGCHLD, SIG_DFL);
 
 	for (;;) {
 		pid = waitpid (pid, &status, WUNTRACED);
@@ -426,7 +426,7 @@ vipwedit (const char *file, int (*file_lock) (void), int (*file_unlock) (bool))
 		if (stat (file, &st1) != 0) {
 			vipwexit (_("failed to stat edited file"), errno, 1);
 		}
-		to_rename = aprintf("%s+", file);
+		to_rename = aprintf("%s,XXXXXX", file);
 		if (to_rename == NULL)
 			vipwexit (_("aprintf() failed"), errno, 1);
 

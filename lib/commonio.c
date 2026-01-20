@@ -27,12 +27,13 @@
 #include "atoi/getnum.h"
 #include "commonio.h"
 #include "defines.h"
+#include "fs/mkstemp/fmkomstemp.h"
 #include "nscd.h"
 #ifdef WITH_TCB
 #include <tcb.h>
 #endif				/* WITH_TCB */
 #include "prototypes.h"
-#include "shadowlog_internal.h"
+#include "shadowlog.h"
 #include "sssd.h"
 #include "string/memset/memzero.h"
 #include "string/sprintf/aprintf.h"
@@ -44,12 +45,10 @@
 
 
 /* local function prototypes */
-static int lrename (const char *, const char *);
 static int check_link_count (const char *file, bool log);
 static int do_lock_file (const char *file, const char *lock, bool log);
-static /*@null@*/ /*@dependent@*/FILE *fopen_set_perms (
-	const char *name,
-	const char *mode,
+static /*@null@*/ /*@dependent@*/FILE *fmkstemp_set_perms (
+	char *name,
 	const struct stat *sb);
 static int create_backup (const char *, FILE *);
 static void free_linked_list (struct commonio_db *);
@@ -69,50 +68,24 @@ static /*@dependent@*/ /*@null@*/struct commonio_entry *next_entry_by_name (
 static int lock_count = 0;
 static bool nscd_need_reload = false;
 
-/*
- * Simple rename(P) alternative that attempts to rename to symlink
- * target.
- */
-int lrename (const char *old, const char *new)
-{
-	int res;
-	char *r = NULL;
-	struct stat sb;
-
-	if (lstat (new, &sb) == 0 && S_ISLNK (sb.st_mode)) {
-		r = realpath (new, NULL);
-		if (NULL == r) {
-			perror ("realpath in lrename()");
-		} else {
-			new = r;
-		}
-	}
-
-	res = rename (old, new);
-
-	free (r);
-
-	return res;
-}
-
 static int check_link_count (const char *file, bool log)
 {
 	struct stat sb;
 
 	if (stat (file, &sb) != 0) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: %s file stat error: %s\n",
-			                shadow_progname, file, strerrno());
+			                log_get_progname(), file, strerrno());
 		}
 		return 0;
 	}
 
 	if (sb.st_nlink != 2) {
 		if (log) {
-			fprintf(shadow_logfd,
+			fprintf(log_get_logfd(),
 			        "%s: %s: lock file already used (nlink: %ju)\n",
-			        shadow_progname, file, (uintmax_t) sb.st_nlink);
+			        log_get_progname(), file, (uintmax_t) sb.st_nlink);
 		}
 		return 0;
 	}
@@ -132,9 +105,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	fd = open (file, O_CREAT | O_TRUNC | O_WRONLY, 0600);
 	if (-1 == fd) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: %s: %s\n",
-			                shadow_progname, file, strerrno());
+			                log_get_progname(), file, strerrno());
 		}
 		return 0;
 	}
@@ -144,9 +117,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	len = (ssize_t) strlen (buf) + 1;
 	if (write_full(fd, buf, len) == -1) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: %s file write error: %s\n",
-			                shadow_progname, file, strerrno());
+			                log_get_progname(), file, strerrno());
 		}
 		(void) close (fd);
 		unlink (file);
@@ -154,9 +127,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	}
 	if (fdatasync (fd) == -1) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: %s file sync error: %s\n",
-			                shadow_progname, file, strerrno());
+			                log_get_progname(), file, strerrno());
 		}
 		(void) close (fd);
 		unlink (file);
@@ -173,9 +146,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	fd = open (lock, O_RDWR);
 	if (-1 == fd) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: %s: %s\n",
-			                shadow_progname, lock, strerrno());
+			                log_get_progname(), lock, strerrno());
 		}
 		unlink (file);
 		errno = EINVAL;
@@ -185,9 +158,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	close (fd);
 	if (len <= 0) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: existing lock file %s without a PID\n",
-			                shadow_progname, lock);
+			                log_get_progname(), lock);
 		}
 		unlink (file);
 		errno = EINVAL;
@@ -196,9 +169,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	stpcpy(&buf[len], "");
 	if (get_pid(buf, &pid) == -1) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: existing lock file %s with an invalid PID '%s'\n",
-			                shadow_progname, lock, buf);
+			                log_get_progname(), lock, buf);
 		}
 		unlink (file);
 		errno = EINVAL;
@@ -206,9 +179,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	}
 	if (kill (pid, 0) == 0) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: lock %s already used by PID %lu\n",
-			                shadow_progname, lock, (unsigned long) pid);
+			                log_get_progname(), lock, (unsigned long) pid);
 		}
 		unlink (file);
 		errno = EEXIST;
@@ -216,9 +189,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 	}
 	if (unlink (lock) != 0) {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: cannot get lock %s: %s\n",
-			                shadow_progname, lock, strerrno());
+			                log_get_progname(), lock, strerrno());
 		}
 		unlink (file);
 		return 0;
@@ -229,9 +202,9 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 		retval = check_link_count (file, log);
 	} else {
 		if (log) {
-			(void) fprintf (shadow_logfd,
+			(void) fprintf (log_get_logfd(),
 			                "%s: cannot get lock %s: %s\n",
-			                shadow_progname, lock, strerrno());
+			                log_get_progname(), lock, strerrno());
 		}
 	}
 
@@ -240,17 +213,13 @@ static int do_lock_file (const char *file, const char *lock, bool log)
 }
 
 
-static /*@null@*/ /*@dependent@*/FILE *fopen_set_perms (
-	const char *name,
-	const char *mode,
+static /*@null@*/ /*@dependent@*/FILE *fmkstemp_set_perms (
+	char *name,
 	const struct stat *sb)
 {
 	FILE *fp;
-	mode_t mask;
 
-	mask = umask (0777);
-	fp = fopen (name, mode);
-	(void) umask (mask);
+	fp = fmkomstemp(name, 0, 0600);
 	if (NULL == fp) {
 		return NULL;
 	}
@@ -266,24 +235,26 @@ static /*@null@*/ /*@dependent@*/FILE *fopen_set_perms (
 
       fail:
 	(void) fclose (fp);
-	/* fopen_set_perms is used for intermediate files */
+	/* fmkstemp_set_perms is used for intermediate files */
 	(void) unlink (name);
 	return NULL;
 }
 
 
-static int create_backup (const char *backup, FILE * fp)
+static int create_backup (const char *name, FILE * fp)
 {
+	char  tmpf[PATH_MAX], target[PATH_MAX];
 	struct stat sb;
 	struct utimbuf ub;
 	FILE *bkfp;
 	int c;
 
+	stprintf_a(tmpf, "%s.cioXXXXXX", name);
 	if (fstat (fileno (fp), &sb) != 0) {
 		return -1;
 	}
 
-	bkfp = fopen_set_perms (backup, "w", &sb);
+	bkfp = fmkstemp_set_perms(tmpf, &sb);
 	if (NULL == bkfp) {
 		return -1;
 	}
@@ -299,22 +270,28 @@ static int create_backup (const char *backup, FILE * fp)
 	}
 	if ((c != EOF) || (ferror (fp) != 0) || (fflush (bkfp) != 0)) {
 		(void) fclose (bkfp);
-		/* FIXME: unlink the backup file? */
+		unlink(tmpf);
 		return -1;
 	}
 	if (fsync (fileno (bkfp)) != 0) {
 		(void) fclose (bkfp);
-		/* FIXME: unlink the backup file? */
+		unlink(tmpf);
 		return -1;
 	}
 	if (fclose (bkfp) != 0) {
-		/* FIXME: unlink the backup file? */
+		unlink(tmpf);
+		return -1;
+	}
+
+	stprintf_a(target, "%s-", name);
+	if (rename(tmpf, target) != 0) {
+		unlink(tmpf);
 		return -1;
 	}
 
 	ub.actime = sb.st_atime;
 	ub.modtime = sb.st_mtime;
-	(void) utime (backup, &ub);
+	(void) utime(target, &ub);
 	return 0;
 }
 
@@ -402,9 +379,9 @@ int commonio_lock (struct commonio_db *db)
 		if (0 == lock_count) {
 			if (lckpwdf () == -1) {
 				if (geteuid () != 0) {
-					(void) fprintf (shadow_logfd,
+					(void) fprintf (log_get_logfd(),
 					                "%s: Permission denied.\n",
-					                shadow_progname);
+					                log_get_progname());
 				}
 				return 0;	/* failure */
 			}
@@ -438,8 +415,8 @@ int commonio_lock (struct commonio_db *db)
 		}
 		/* no unnecessary retries on "permission denied" errors */
 		if (geteuid () != 0) {
-			(void) fprintf (shadow_logfd, "%s: Permission denied.\n",
-			                shadow_progname);
+			(void) fprintf (log_get_logfd(), "%s: Permission denied.\n",
+			                log_get_progname());
 			return 0;
 		}
 	}
@@ -868,7 +845,7 @@ int
 commonio_close(struct commonio_db *db, MAYBE_UNUSED bool process_selinux)
 {
 	bool         errors = false;
-	char         buf[1024];
+	char         tmpf[PATH_MAX];
 	struct stat  sb;
 
 	if (!db->isopen) {
@@ -900,19 +877,13 @@ commonio_close(struct commonio_db *db, MAYBE_UNUSED bool process_selinux)
 		/*
 		 * Create backup file.
 		 */
-		if (stprintf_a(buf, "%s-", db->filename) == -1) {
-			(void) fclose (db->fp);
-			db->fp = NULL;
-			goto fail;
-		}
-
 #ifdef WITH_SELINUX
 		if (process_selinux
 		    && set_selinux_file_context (db->filename, S_IFREG) != 0) {
 			errors = true;
 		}
 #endif
-		if (create_backup (buf, db->fp) != 0) {
+		if (create_backup(db->filename, db->fp) != 0) {
 			errors = true;
 		}
 
@@ -939,7 +910,7 @@ commonio_close(struct commonio_db *db, MAYBE_UNUSED bool process_selinux)
 		sb.st_gid = db->st_gid;
 	}
 
-	if (stprintf_a(buf, "%s+", db->filename) == -1)
+	if (stprintf_a(tmpf, "%s.cioXXXXXX", db->filename) == -1)
 		goto fail;
 
 #ifdef WITH_SELINUX
@@ -949,7 +920,7 @@ commonio_close(struct commonio_db *db, MAYBE_UNUSED bool process_selinux)
 	}
 #endif
 
-	db->fp = fopen_set_perms (buf, "w", &sb);
+	db->fp = fmkstemp_set_perms(tmpf, &sb);
 	if (NULL == db->fp) {
 		goto fail;
 	}
@@ -973,11 +944,11 @@ commonio_close(struct commonio_db *db, MAYBE_UNUSED bool process_selinux)
 	db->fp = NULL;
 
 	if (errors) {
-		unlink (buf);
+		unlink(tmpf);
 		goto fail;
 	}
 
-	if (lrename (buf, db->filename) != 0) {
+	if (rename(tmpf, db->filename) != 0) {
 		goto fail;
 	}
 
@@ -1045,7 +1016,7 @@ int commonio_update (struct commonio_db *db, const void *eptr)
 	p = find_entry_by_name(db, db->ops->cio_getname(eptr));
 	if (NULL != p) {
 		if (next_entry_by_name(db, p->next, db->ops->cio_getname(eptr)) != NULL) {
-			fprintf(shadow_logfd, _("Multiple entries named '%s' in %s. Please fix this with pwck or grpck.\n"), db->ops->cio_getname(eptr), db->filename);
+			fprintf(log_get_logfd(), _("Multiple entries named '%s' in %s. Please fix this with pwck or grpck.\n"), db->ops->cio_getname(eptr), db->filename);
 			db->ops->cio_free(nentry);
 			return 0;
 		}
@@ -1150,7 +1121,7 @@ int commonio_remove (struct commonio_db *db, const char *name)
 		return 0;
 	}
 	if (next_entry_by_name (db, p->next, name) != NULL) {
-		fprintf (shadow_logfd, _("Multiple entries named '%s' in %s. Please fix this with pwck or grpck.\n"), name, db->filename);
+		fprintf (log_get_logfd(), _("Multiple entries named '%s' in %s. Please fix this with pwck or grpck.\n"), name, db->filename);
 		return 0;
 	}
 
