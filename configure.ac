@@ -3,7 +3,6 @@ AC_PREREQ([2.69])
 m4_define([libsubid_abi_major], [5])
 m4_define([libsubid_abi_minor], [0])
 m4_define([libsubid_abi_micro], [0])
-m4_define([libsubid_abi], [libsubid_abi_major.libsubid_abi_minor.libsubid_abi_micro])
 
 AC_INIT([shadow], [4.19.0], [pkg-shadow-devel@lists.alioth.debian.org], [],
 	[https://github.com/shadow-maint/shadow])
@@ -19,7 +18,6 @@ AC_SUBST([AM_DISTCHECK_CONFIGURE_FLAGS], ["$ac_configure_args"])
 AC_SUBST([LIBSUBID_ABI_MAJOR], [libsubid_abi_major])
 AC_SUBST([LIBSUBID_ABI_MINOR], [libsubid_abi_minor])
 AC_SUBST([LIBSUBID_ABI_MICRO], [libsubid_abi_micro])
-AC_SUBST([LIBSUBID_ABI], [libsubid_abi])
 
 dnl Some hacks...
 test "x$prefix" = "xNONE" && prefix="/usr"
@@ -63,14 +61,10 @@ AC_CHECK_MEMBERS([struct utmpx.ut_name,
                   struct utmpx.ut_xtime],[],[],[[#include <utmpx.h>]])
 
 dnl Checks for library functions.
-AC_FUNC_UTIME_NULL
 AC_REPLACE_FUNCS([putgrent putpwent putspent])
 AC_REPLACE_FUNCS([sgetgrent sgetpwent sgetspent])
 
-AC_CHECK_FUNC([setpgrp])
-AC_CHECK_FUNC([secure_getenv],
-	[AC_DEFINE([HAS_SECURE_GETENV],[1],[Defined to 1 if you have the declaration of 'secure_getenv'])]
-)
+AC_CHECK_DECLS([secure_getenv])
 
 AC_CACHE_CHECK([location of shared mail directory], [shadow_cv_maildir],
 [for shadow_cv_maildir in /var/mail /var/spool/mail /usr/spool/mail /usr/mail none; do
@@ -587,7 +581,7 @@ if test "X$with_skey" = "Xyes"; then
 	]])],[AC_DEFINE([SKEY_BSD_STYLE], [1], [Define to support newer BSD S/Key API])],[])
 fi
 
-AC_CHECK_FUNC([fgetpwent_r], [AC_DEFINE([HAVE_FGETPWENT_R], [1], [Defined to 1 if you have the declaration of 'fgetpwent_r'])])
+AC_CHECK_FUNCS([fgetpwent_r])
 
 AC_DEFINE_UNQUOTED([SHELL], ["$SHELL"], [The default shell.])
 
