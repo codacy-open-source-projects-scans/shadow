@@ -1,5 +1,6 @@
 provisioned_topologies:
 - shadow
+
 domains:
 - id: shadow
   hosts:
