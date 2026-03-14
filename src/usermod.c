@@ -66,6 +66,7 @@
 #include "string/strdup/strdup.h"
 #include "string/strerrno.h"
 #include "string/strspn/stprspn.h"
+#include "sysconf.h"
 #include "time/day_to_str.h"
 #include "typetraits.h"
 
@@ -134,7 +135,7 @@ static long user_expire = MISSING_TIME;
 static long user_newexpire = MISSING_TIME;
 static long user_inactive = MISSING_TIME;
 static long user_newinactive = MISSING_TIME;
-static long sys_ngroups;
+static size_t sys_ngroups;
 static char **user_groups;	/* NULL-terminated list */
 
 static const char* prefix = "";
@@ -234,7 +235,7 @@ static int get_groups (char *list)
 {
 	struct group *grp;
 	bool errors = false;
-	int ngroups = 0;
+	size_t ngroups = 0;
 
 	/*
 	 * Initialize the list to be empty
@@ -284,7 +285,7 @@ static int get_groups (char *list)
 
 		if (ngroups == sys_ngroups) {
 			fprintf (stderr,
-			         _("%s: too many groups specified (max %d).\n"),
+			         _("%s: too many groups specified (max %zu).\n"),
 			         Prog, ngroups);
 			gr_free (grp);
 			break;
@@ -2202,7 +2203,7 @@ int main (int argc, char **argv)
 	audit_help_open ();
 #endif
 
-	sys_ngroups = sysconf (_SC_NGROUPS_MAX);
+	sys_ngroups = ngroups_max_size();
 	user_groups = xmalloc_T(sys_ngroups + 1, char *);
 	user_groups[0] = NULL;
 
