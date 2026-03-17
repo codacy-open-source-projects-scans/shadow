@@ -9,9 +9,6 @@
 
 #include "config.h"
 
-#ident "$Id: $"
-
-#include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -23,6 +20,7 @@
 #include "atoi/getnum.h"
 #include "defines.h"
 #include "fs/readlink/readlinknul.h"
+#include "io/fgets/fgets.h"
 #include "prototypes.h"
 #ifdef ENABLE_SUBIDS
 #include "subordinateio.h"
@@ -32,6 +30,9 @@
 #include "string/strcmp/streq.h"
 #include "string/strcmp/strneq.h"
 #include "string/strcmp/strprefix.h"
+
+#undef NDEBUG
+#include <assert.h>
 
 
 #ifdef __linux__
@@ -128,7 +129,7 @@ static int check_status (const char *name, const char *sname, uid_t uid)
 	if (NULL == sfile) {
 		return 0;
 	}
-	while (fgets(line, sizeof(line), sfile) != NULL) {
+	while (fgets_a(line, sfile) != NULL) {
 		if (strprefix(line, "Uid:\t")) {
 			unsigned long ruid, euid, suid;
 

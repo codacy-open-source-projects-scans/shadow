@@ -9,9 +9,6 @@
 
 #include "config.h"
 
-#ident "$Id$"
-
-#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -42,6 +39,7 @@
 #include "fs/mkstemp/fmkomstemp.h"
 #include "getdef.h"
 #include "groupio.h"
+#include "io/fgets/fgets.h"
 #include "nscd.h"
 #include "prototypes.h"
 #include "pwauth.h"
@@ -73,6 +71,9 @@
 #include "string/strerrno.h"
 #include "string/strtok/stpsep.h"
 #include "sysconf.h"
+
+#undef NDEBUG
+#include <assert.h>
 
 
 #ifndef SKEL_DIR
@@ -354,7 +355,7 @@ get_defaults(const struct option_flags *flags)
 	 * Read the file a line at a time. Only the lines that have relevant
 	 * values are used, everything else can be ignored.
 	 */
-	while (fgets(buf, sizeof(buf), fp) != NULL) {
+	while (fgets_a(buf, fp) != NULL) {
 		stpsep(buf, "\n");
 
 		cp = stpsep(buf, "=");
@@ -598,7 +599,7 @@ set_defaults(void)
 		goto skip;
 	}
 
-	while (fgets(buf, sizeof(buf), ifp) != NULL) {
+	while (fgets_a(buf, ifp) != NULL) {
 		char  *val;
 
 		if (stpsep(buf, "\n") == NULL) {
