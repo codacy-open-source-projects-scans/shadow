@@ -414,3 +414,66 @@ def test_useradd__valid_group_as_primary(shadow: Shadow, group_name: str, group_
     assert (
         passwd_entry.gid == group_entry.gid
     ), f"User's GID ({passwd_entry.gid}) should match group's GID ({group_entry.gid})"
+
+
+@pytest.mark.topology(KnownTopology.Shadow)
+@pytest.mark.parametrize(
+    "uid_value, expected_error",
+    [
+        pytest.param(-1, "useradd: invalid user ID '-1'", id="negative_uid"),
+        pytest.param(4294967296, "useradd: invalid user ID '4294967296'", id="out_of_range_uid"),
+    ],
+)
+def test_useradd__invalid_uid(shadow: Shadow, uid_value: int, expected_error: str):
+    """
+    :title: Add a new user with an invalid UID
+    :steps:
+        1. Attempt to create user with invalid UID
+        2. Verify command fails with appropriate error code and message
+        3. Check passwd, group entries
+        4. Check home directory
+    :expectedresults:
+        1. useradd command fails
+        2. Return code is 3 (invalid argument)
+        3. No entries are added to passwd, group
+        4. No home directory is created
+    :customerscenario: False
+    """
+    with pytest.raises(ProcessError) as exc_info:
+        shadow.useradd(f"test1 -u {uid_value}")
+
+    actual_rc = getattr(exc_info.value, "rc", getattr(exc_info.value, "returncode", None))
+    assert actual_rc == 3, f"Expected return code 3 (invalid argument), got {actual_rc}"
+
+    error_output = exc_info.value.stderr.strip() if exc_info.value.stderr else ""
+    assert error_output == expected_error, f"Expected error message '{expected_error}', got '{error_output}'"
+
+    assert shadow.tools.getent.passwd("test1") is None, "User test1 should not be found in passwd"
+    assert shadow.tools.getent.group("test1") is None, "Group test1 should not be found"
+    assert not shadow.fs.exists("/home/test1"), "Home directory should not be created"
+
+
+@pytest.mark.topology(KnownTopology.Shadow)
+def test_useradd__specific_large_uid(shadow: Shadow):
+    """
+    :title: Verify user creation at the upper boundary for UID
+    :steps:
+        1. Create user with UID 2147483647 (2^31 - 1, maximum signed 32-bit integer)
+        2. Check passwd entry
+        3. Check group entry
+    :expectedresults:
+        1. User is created successfully
+        2. Passwd entry exists with correct UID 2147483647
+        3. Group entry exists
+    :customerscenario: False
+    """
+    shadow.useradd("test1 -u 2147483647")
+
+    passwd_entry = shadow.tools.getent.passwd("test1")
+    assert passwd_entry is not None, "User test1 should be found in passwd"
+    assert passwd_entry.name == "test1", "Incorrect username"
+    assert passwd_entry.uid == 2147483647, f"Incorrect UID, expected 2147483647, got {passwd_entry.uid}"
+
+    group_entry = shadow.tools.getent.group("test1")
+    assert group_entry is not None, "Group test1 should be found"
+    assert group_entry.name == "test1", "Incorrect group name"
