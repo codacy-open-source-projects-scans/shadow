@@ -66,8 +66,6 @@ static pam_handle_t *pamh = NULL;
 	(void) pam_end(pamh, retcode); \
 	exit(1); \
    }
-#define PAM_END { retcode = pam_close_session(pamh,0); \
-		(void) pam_end(pamh,retcode); }
 
 #endif				/* USE_PAM */
 
@@ -698,13 +696,13 @@ int main (int argc, char **argv)
 				fprintf (stderr,
 				         _("Maximum number of tries exceeded (%u)\n"),
 				         failcount);
-				PAM_END;
+				pam_end(pamh, retcode);
 				exit(0);
 			} else if (retcode == PAM_ABORT) {
 				/* Serious problems, quit now */
 				(void) fputs (_("login: abort requested by PAM\n"), stderr);
 				SYSLOG(LOG_ERR, "PAM_ABORT returned from pam_authenticate()");
-				PAM_END;
+				pam_end(pamh, retcode);
 				exit(99);
 			} else if (retcode != PAM_SUCCESS) {
 				SYSLOG(LOG_NOTICE, "FAILED LOGIN (%u)%s FOR '%s', %s",
@@ -742,7 +740,7 @@ int main (int argc, char **argv)
 				fprintf (stderr,
 				         _("Maximum number of tries exceeded (%u)\n"),
 				         failcount);
-				PAM_END;
+				pam_end(pamh, retcode);
 				exit(0);
 			}
 
@@ -764,11 +762,6 @@ int main (int argc, char **argv)
 	if (retcode == PAM_NEW_AUTHTOK_REQD) {
 		retcode = pam_chauthtok (pamh, PAM_CHANGE_EXPIRED_AUTHTOK);
 	}
-	PAM_FAIL_CHECK;
-
-	/* Open the PAM session */
-	get_pam_user (&pam_user);
-	retcode = pam_open_session (pamh, hushed (pam_user) ? PAM_SILENT : 0);
 	PAM_FAIL_CHECK;
 
 	/* Grab the user information out of the password file for future usage
@@ -804,6 +797,17 @@ int main (int argc, char **argv)
 	/* Note: if pam_setcred changes PAM_USER, this will not be taken
 	 * into account.
 	 */
+
+ 	/* Open the PAM session */
+	get_pam_user (&pam_user);
+	retcode = pam_open_session (pamh, hushed (pam_user) ? PAM_SILENT : 0);
+	if (retcode != PAM_SUCCESS) {
+		fprintf(stderr,"\n%s\n", pam_strerror(pamh, retcode));
+		SYSLOG(LOG_ERR,"%s",pam_strerror(pamh, retcode));
+		pam_setcred(pamh, PAM_DELETE_CRED);
+		pam_end(pamh, retcode);
+		exit(1);
+	}
 
 #else				/* ! USE_PAM */
 	while (true) {	/* repeatedly get login/password pairs */
@@ -1093,7 +1097,8 @@ int main (int argc, char **argv)
 	if (child < 0) {
 		/* error in fork() */
 		fprintf(stderr, _("%s: failure forking: %s"), Prog, strerrno());
-		PAM_END;
+		retcode = pam_close_session(pamh, 0);
+		pam_end(pamh, retcode);
 		exit (0);
 	} else if (child != 0) {
 		/*
@@ -1101,7 +1106,8 @@ int main (int argc, char **argv)
 		 * session
 		 */
 		wait (NULL);
-		PAM_END;
+		retcode = pam_close_session(pamh, 0);
+		pam_end(pamh, retcode);
 		exit (0);
 	}
 	/* child */
