@@ -1,11 +1,11 @@
-/*
- * SPDX-FileCopyrightText: 1991 - 1994, Julianne Frances Haugh
- * SPDX-FileCopyrightText: 1996 - 2000, Marek Michałkiewicz
- * SPDX-FileCopyrightText: 2000 - 2006, Tomasz Kłoczko
- * SPDX-FileCopyrightText: 2007 - 2012, Nicolas François
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
+// SPDX-FileCopyrightText: 1991-1994, Julianne Frances Haugh
+// SPDX-FileCopyrightText: 1996-2000, Marek Michałkiewicz
+// SPDX-FileCopyrightText: 2000-2006, Tomasz Kłoczko
+// SPDX-FileCopyrightText: 2007-2012, Nicolas François
+// SPDX-FileCopyrightText: 2025-2026, Hadi Chokr
+// SPDX-FileCopyrightText: 2026, Alejandro Colomar <alx@kernel.org>
+// SPDX-License-Identifier: BSD-3-Clause
+
 
 #include "config.h"
 
@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -33,6 +34,7 @@
 #include "alloc/malloc.h"
 #include "atoi/a2i.h"
 #include "atoi/getnum.h"
+#include "btrfs.h"
 #include "chkname.h"
 #include "defines.h"
 #include "faillog.h"
@@ -2249,6 +2251,8 @@ static void create_home(const struct option_flags *flags)
 	   owner root:root.
 	 */
 	for (cp = strtok(bhome, "/"); cp != NULL; cp = strtok(NULL, "/")) {
+		bool  dir_created;
+
 		/* Avoid turning a relative path into an absolute path. */
 		if (strprefix(bhome, "/") || !streq(path, ""))
 			strcat(path, "/");
@@ -2258,13 +2262,11 @@ static void create_home(const struct option_flags *flags)
 			continue;
 		}
 
-		/* Check if parent directory is BTRFS, fail if requesting
-		   subvolume but no BTRFS. The paths could be different by the
-		   trailing slash
-		 */
+		dir_created = false;
 #if WITH_BTRFS
 		if (subvolflg && (strlen(prefix_user_home) - (int)strlen(path)) <= 1) {
 			char *btrfs_check = strdup(path);
+			struct statfs  sfs;
 
 			if (!btrfs_check) {
 				fprintf(stderr,
@@ -2273,27 +2275,33 @@ static void create_home(const struct option_flags *flags)
 				fail_exit(E_HOMEDIR, process_selinux);
 			}
 			stpcpy(&btrfs_check[strlen(path) - strlen(cp) - 1], "");
-			if (is_btrfs(btrfs_check) <= 0) {
-				fprintf(stderr,
-					_("%s: home directory \"%s\" must be mounted on BTRFS\n"),
-					Prog, path);
+			if (statfs(btrfs_check, &sfs) == -1) {
+				fprintf(stderr, "%s: statfs(\"%s\"): %s\n",
+					Prog, btrfs_check, strerrno());
 				fail_exit(E_HOMEDIR, process_selinux);
 			}
 			free(btrfs_check);
-			// make subvolume to mount for user instead of directory
-			if (btrfs_create_subvolume(path)) {
+			if (!is_btrfs(&sfs)) {
 				fprintf(stderr,
-					_("%s: failed to create BTRFS subvolume: %s\n"),
+				        _("%s: warning: \"%s\" is not on BTRFS; creating regular directory instead of subvolume\n"),
+				        Prog, prefix_user_home);
+			} else {
+				if (btrfs_create_subvolume(path)) {
+					fprintf(stderr,
+					        _("%s: failed to create BTRFS subvolume: %s\n"),
+						Prog, path);
+					fail_exit(E_HOMEDIR, process_selinux);
+				}
+				dir_created = true;
+			}
+		}
+#endif
+		if (!dir_created) {
+			if (mkdir(path, 0) != 0) {
+				fprintf(stderr, _("%s: cannot create directory %s\n"),
 					Prog, path);
 				fail_exit(E_HOMEDIR, process_selinux);
 			}
-		}
-		else
-#endif
-		if (mkdir(path, 0) != 0) {
-			fprintf(stderr, _("%s: cannot create directory %s\n"),
-				Prog, path);
-			fail_exit(E_HOMEDIR, process_selinux);
 		}
 		if (chown(path, 0, 0) < 0) {
 			fprintf(stderr,
